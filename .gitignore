@@ -1,0 +1,33 @@
+# Build output
+**/bin/
+**/obj/
+
+# IDE metadata
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Local configuration and secrets
+.env
+.env.*
+!*.example
+appsettings.Local.json
+secrets.json
+*.pfx
+*.p12
+
+# Test and coverage output
+TestResults/
+coverage/
+artifacts/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Superseded template projects kept outside the active solution
+/AnxietyWatchAPI/
+/AnxietyWatch.UnitTest/
+/AnxietyWatch.IntegrationTest/
+/AnxietyWatch.SecurityTest/

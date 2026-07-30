@@ -1,0 +1,10 @@
+<Solution>
+  <Project Path="src/AnxietyWatch.Api/AnxietyWatch.Api.csproj" />
+  <Project Path="src/AnxietyWatch.Application/AnxietyWatch.Application.csproj" />
+  <Project Path="src/AnxietyWatch.Domain/AnxietyWatch.Domain.csproj" />
+  <Project Path="src/AnxietyWatch.Infrastructure/AnxietyWatch.Infrastructure.csproj" />
+  <Project Path="tests/AnxietyWatch.Application.UnitTests/AnxietyWatch.Application.UnitTests.csproj" />
+  <Project Path="tests/AnxietyWatch.Domain.UnitTests/AnxietyWatch.Domain.UnitTests.csproj" />
+  <Project Path="tests/AnxietyWatch.IntegrationTests/AnxietyWatch.IntegrationTests.csproj" />
+  <Project Path="tests/AnxietyWatch.SecurityTests/AnxietyWatch.SecurityTests.csproj" />
+</Solution>

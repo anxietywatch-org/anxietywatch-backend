@@ -1,0 +1,43 @@
+using AnxietyWatch.Domain.Plans;
+using AnxietyWatch.Domain.Users;
+using AnxietyWatch.Infrastructure.Caching;
+using AnxietyWatch.Infrastructure.Persistence;
+using AnxietyWatch.Infrastructure.Persistence.Mongo;
+using AnxietyWatch.Infrastructure.Security;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace AnxietyWatch.Infrastructure;
+
+public static class DependencyInjection
+{
+    public static IServiceCollection AddInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.AddSingleton<AnxietyWatch.Application.Abstractions.Caching.ICacheService, NoOpCacheService>();
+        services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, InMemoryEpisodeRepository>();
+        services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, InMemoryLinkTokenRepository>();
+        services.AddHttpContextAccessor();
+        services.AddSingleton<IUserRepository, InMemoryUserRepository>();
+        services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordHasher, BcryptPasswordHasher>();
+        services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IJwtTokenService, JwtTokenService>();
+        services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.ICurrentUser, HttpCurrentUser>();
+        services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IRevokedTokenStore, InMemoryRevokedTokenStore>();
+        services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordResetTokenStore, InMemoryPasswordResetTokenStore>();
+        services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IEmailSender, LoggingEmailSender>();
+        services.AddSingleton<AnxietyWatch.Application.Abstractions.Time.ISystemClock, SystemClock>();
+
+        if (string.Equals(configuration["Persistence:Provider"], "Mongo", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddSingleton<MongoContext>();
+            services.AddSingleton<IPlanRepository, MongoPlanRepository>();
+        }
+        else
+        {
+            services.AddSingleton<IPlanRepository, InMemoryPlanRepository>();
+        }
+
+        return services;
+    }
+}
