@@ -74,6 +74,13 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
+app.MapGet("/health", () => Results.Ok(new
+{
+    status = "Healthy",
+    service = "AnxietyWatch.API",
+    timestamp = DateTime.UtcNow
+})).ExcludeFromDescription();
+
 app.Run();
 
 public partial class Program;
