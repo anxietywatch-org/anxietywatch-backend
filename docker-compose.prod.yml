@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   api:
-    image: ghcr.io/anxietywatch-org/anxietywatch-backend:main
+    image: ghcr.io/anxietywatch-org/anxietywatch-backend:develop
     container_name: anxietywatch-api-prod
     environment:
       ASPNETCORE_ENVIRONMENT: Production
