@@ -23,6 +23,7 @@ if (string.IsNullOrWhiteSpace(signingKey))
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers();
+builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options => options.SerializerOptions.PropertyNameCaseInsensitive = true);
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("FamilyPlan", policy => policy.RequireClaim("plan", "family"));
