@@ -20,10 +20,10 @@ RUN dotnet publish src/AnxietyWatch.Api/AnxietyWatch.Api.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 
 WORKDIR /app
-ENV ASPNETCORE_HTTP_PORTS=8080
+ENV ASPNETCORE_HTTP_PORTS=10000
 ENV DOTNET_EnableDiagnostics=0
 COPY --from=build /app/publish ./
 
-EXPOSE 8080
+EXPOSE 10000
 USER 10001
 ENTRYPOINT ["dotnet", "AnxietyWatch.Api.dll"]
