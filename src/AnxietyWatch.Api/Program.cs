@@ -23,6 +23,24 @@ if (string.IsNullOrWhiteSpace(signingKey))
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy =>
+    {
+        var origins = builder.Configuration["Cors:AllowedOrigins"]
+            ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (origins is { Length: > 0 })
+        {
+            policy.WithOrigins(origins);
+        }
+        else
+        {
+            policy.AllowAnyOrigin();
+        }
+
+        policy.AllowAnyHeader().AllowAnyMethod();
+    });
+});
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("FamilyPlan", policy => policy.RequireClaim("plan", "family"));
@@ -70,6 +88,7 @@ var app = builder.Build();
 
 app.UseMiddleware<AnxietyWatch.Api.Middleware.ExceptionHandlingMiddleware>();
 app.UseHttpsRedirection();
+app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

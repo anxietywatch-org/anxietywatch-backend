@@ -38,17 +38,13 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
         RuleFor(command => command.Email).NotEmpty().EmailAddress();
         RuleFor(command => command.Password)
             .MinimumLength(8)
-            .Matches("[A-Z]")
-            .Matches("[0-9]");
+            .MaximumLength(30);
         RuleFor(command => command.PlanId)
             .Must(value => new[] { "free", "individual", "family", "professional" }
                 .Contains(value, StringComparer.OrdinalIgnoreCase));
         RuleFor(command => command.BillingCycle)
             .Must(value => new[] { "monthly", "yearly" }
                 .Contains(value, StringComparer.OrdinalIgnoreCase));
-        RuleFor(command => command.PaymentMethodToken)
-            .NotEmpty()
-            .When(command => !string.Equals(command.PlanId, "free", StringComparison.OrdinalIgnoreCase));
         RuleFor(command => command.PaymentMethodToken)
             .Must(string.IsNullOrWhiteSpace)
             .When(command => string.Equals(command.PlanId, "free", StringComparison.OrdinalIgnoreCase))
@@ -147,15 +143,22 @@ public sealed class LoginCommandHandler(
     }
 }
 
-public sealed record GetSessionQuery : IRequest<UserResponse>;
+public sealed record GetSessionQuery : IRequest<AuthenticationResponse>;
 
-public sealed class GetSessionQueryHandler(ICurrentUser currentUser, IUserRepository users)
-    : IRequestHandler<GetSessionQuery, UserResponse>
+public sealed class GetSessionQueryHandler(
+    ICurrentUser currentUser,
+    IUserRepository users,
+    IJwtTokenService jwtTokenService)
+    : IRequestHandler<GetSessionQuery, AuthenticationResponse>
 {
-    public async Task<UserResponse> Handle(GetSessionQuery request, CancellationToken cancellationToken)
+    public async Task<AuthenticationResponse> Handle(
+        GetSessionQuery request,
+        CancellationToken cancellationToken)
     {
         var user = await RequireUserAsync(currentUser, users, cancellationToken);
-        return RegisterCommandHandler.ToResponse(user);
+        return RegisterCommandHandler.CreateResponse(
+            user,
+            jwtTokenService.Create(user.Id, user.Email, user.PlanId));
     }
 
     internal static async Task<User> RequireUserAsync(
@@ -241,7 +244,7 @@ public sealed class ResetPasswordCommandValidator : AbstractValidator<ResetPassw
     public ResetPasswordCommandValidator()
     {
         RuleFor(command => command.Token).NotEmpty();
-        RuleFor(command => command.NewPassword).MinimumLength(8).Matches("[A-Z]").Matches("[0-9]");
+        RuleFor(command => command.NewPassword).MinimumLength(8).MaximumLength(30);
     }
 }
 
@@ -278,7 +281,7 @@ public sealed class ChangePasswordCommandValidator : AbstractValidator<ChangePas
     public ChangePasswordCommandValidator()
     {
         RuleFor(command => command.CurrentPassword).NotEmpty();
-        RuleFor(command => command.NewPassword).MinimumLength(8).Matches("[A-Z]").Matches("[0-9]");
+        RuleFor(command => command.NewPassword).MinimumLength(8).MaximumLength(30);
     }
 }
 
