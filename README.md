@@ -289,14 +289,10 @@ Política `Frontend` habilitada con orígenes configurados en `Cors:AllowedOrigi
 
 ## Despliegue en Render
 
-El archivo `render.yaml` define un Web Service Docker con health check en `/health` y puerto `10000`.
+El archivo `render.yaml` define un Web Service Docker con health check en `/health` y puerto `10000`. No requiere variables manuales: usa el proveedor InMemory y `Jwt__SigningKey` auto-generado.
 
 1. En Render, seleccionar **New > Blueprint** y conectar este repositorio de GitHub.
 2. Confirmar el servicio definido en `render.yaml` (rama `main`, auto-deploy en cada push).
-3. Completar las variables marcadas como manuales:
-   - `Mongo__ConnectionString`: cadena de conexión de MongoDB Atlas. Si aún no tienes Atlas, cambia `Persistence__Provider` a `InMemory` para una demo sin persistencia.
-   - `Cors__AllowedOrigins`: URL del frontend desplegado (p. ej. `https://anxietywatch-web.onrender.com`). Vacío = cualquier origen.
-4. `Jwt__SigningKey` se genera automáticamente en la creación del servicio.
-5. Esperar el deploy y comprobar `https://<servicio>.onrender.com/health` → `{ "status": "ok" }`.
+3. Esperar el deploy y comprobar `https://<servicio>.onrender.com/health` → `{ "status": "ok" }`.
 
-Nota: usuarios, episodios y tokens siguen en memoria (solo `plans` usa el adaptador Mongo). El despliegue es válido para demostración; completar los repositorios Mongo antes de producción.
+Nota: usuarios, episodios y tokens quedan en memoria (se reinician con cada deploy). Para persistir, definir `Persistence__Provider=Mongo` y `Mongo__ConnectionString` desde el dashboard. Para producción, definir `Cors__AllowedOrigins` con la URL del frontend (vacío = cualquier origen).
