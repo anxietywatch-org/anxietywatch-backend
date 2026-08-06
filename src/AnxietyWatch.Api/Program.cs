@@ -69,14 +69,9 @@ builder.Services
 var app = builder.Build();
 
 app.UseMiddleware<AnxietyWatch.Api.Middleware.ExceptionHandlingMiddleware>();
-if (!app.Environment.IsProduction())
-{
-    app.UseHttpsRedirection();
-}
-
+app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapControllers();
 
 app.Run();

@@ -65,18 +65,4 @@ dotnet test AnxietyWatchAPI.slnx --configuration Release
 dotnet list AnxietyWatchAPI.slnx package --vulnerable --include-transitive
 ```
 
-## Despliegue en Render
-
-El archivo `render.yaml` define un Web Service Docker con health check en `/health` y puerto `10000`.
-
-1. Crear una base MongoDB en MongoDB Atlas.
-2. En Atlas, permitir la conexión desde Render y crear la base `anxietywatch`.
-3. En Render, seleccionar **New > Blueprint** y conectar este repositorio de GitHub.
-4. Confirmar el servicio definido en `render.yaml`.
-5. Completar `Mongo__ConnectionString` con la cadena de conexión de Atlas.
-6. Mantener `Jwt__SigningKey` como variable generada por Render.
-7. Esperar el deploy y comprobar `https://<servicio>.onrender.com/health`.
-
-La configuración actual conserva usuarios, episodios y tokens en memoria; MongoDB se utiliza actualmente para el adaptador de planes. Por tanto, el despliegue es válido para demostración, pero requiere completar los repositorios MongoDB antes de usarlo como producción con datos persistentes.
-
 La autenticación JWT, la revocación de tokens, los límites de plan y los primeros recursos protegidos están implementados como slices verticales. Los contratos restantes definidos en la especificación se incorporarán siguiendo el mismo patrón. No se almacenan secretos en `appsettings.json`.
