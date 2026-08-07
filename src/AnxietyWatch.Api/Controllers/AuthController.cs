@@ -12,7 +12,7 @@ public sealed class AuthController(ISender sender) : ControllerBase
     [HttpPost("register")]
     [ProducesResponseType<AuthenticationResponse>(StatusCodes.Status201Created)]
     public async Task<ActionResult<AuthenticationResponse>> Register(
-        RegisterCommand command,
+        [FromBody] RegisterCommand command,
         CancellationToken cancellationToken)
     {
         var response = await sender.Send(command, cancellationToken);

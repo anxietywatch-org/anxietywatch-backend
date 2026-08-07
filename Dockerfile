@@ -24,6 +24,8 @@ ENV ASPNETCORE_HTTP_PORTS=8080
 ENV DOTNET_EnableDiagnostics=0
 COPY --from=build /app/publish ./
 
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 EXPOSE 8080
 USER 10001
 ENTRYPOINT ["dotnet", "AnxietyWatch.Api.dll"]
