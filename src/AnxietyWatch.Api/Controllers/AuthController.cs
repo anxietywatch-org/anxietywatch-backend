@@ -28,7 +28,7 @@ public sealed class AuthController(ISender sender) : ControllerBase
 
     [Authorize]
     [HttpGet("session")]
-    public async Task<ActionResult<UserResponse>> Session(CancellationToken cancellationToken) =>
+    public async Task<ActionResult<AuthenticationResponse>> Session(CancellationToken cancellationToken) =>
         Ok(await sender.Send(new GetSessionQuery(), cancellationToken));
 
     [Authorize]
