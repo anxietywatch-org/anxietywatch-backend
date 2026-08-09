@@ -32,10 +32,12 @@ public static class DependencyInjection
         {
             services.AddSingleton<MongoContext>();
             services.AddSingleton<IPlanRepository, MongoPlanRepository>();
+            services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IWearableSyncRepository, MongoWearableSyncRepository>();
         }
         else
         {
             services.AddSingleton<IPlanRepository, InMemoryPlanRepository>();
+            services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IWearableSyncRepository, InMemoryWearableSyncRepository>();
         }
 
         return services;
