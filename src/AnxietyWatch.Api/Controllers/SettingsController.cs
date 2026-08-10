@@ -10,6 +10,10 @@ namespace AnxietyWatch.Api.Controllers;
 [Route("api/settings")]
 public sealed class SettingsController(ISender sender) : ControllerBase
 {
+    [HttpGet]
+    public async Task<ActionResult<SettingsResponse>> Get(CancellationToken cancellationToken) =>
+        Ok(await sender.Send(new GetSettingsQuery(), cancellationToken));
+
     [HttpPatch]
     public async Task<ActionResult<SettingsResponse>> Update(
         UpdateSettingsCommand command,

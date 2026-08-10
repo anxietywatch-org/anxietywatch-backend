@@ -253,6 +253,10 @@ Descarga `tokens.csv` (`text/csv`).
 
 ### Perfil y ajustes (protegido)
 
+#### GET /api/profile — 200
+
+Devuelve `{ "fullName": "...", "avatarUrl": null }` con los valores actuales.
+
 #### PATCH /api/profile — 200
 
 ```json
@@ -260,6 +264,10 @@ Descarga `tokens.csv` (`text/csv`).
 ```
 
 Responde `{ "fullName": "...", "avatarUrl": null }`.
+
+#### GET /api/settings — 200
+
+Devuelve `{ "anxietyThreshold": 70, "pushNotifications": true, "privateMode": false }` con las preferencias actuales.
 
 #### PATCH /api/settings — 200
 
