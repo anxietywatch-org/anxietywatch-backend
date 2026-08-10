@@ -10,6 +10,10 @@ namespace AnxietyWatch.Api.Controllers;
 [Route("api/profile")]
 public sealed class ProfileController(ISender sender) : ControllerBase
 {
+    [HttpGet]
+    public async Task<ActionResult<ProfileResponse>> Get(CancellationToken cancellationToken) =>
+        Ok(await sender.Send(new GetProfileQuery(), cancellationToken));
+
     [HttpPatch]
     public async Task<ActionResult<ProfileResponse>> Update(
         UpdateProfileCommand command,
