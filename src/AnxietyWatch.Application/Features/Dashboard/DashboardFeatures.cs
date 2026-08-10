@@ -57,7 +57,8 @@ public sealed class GetDashboardSummaryQueryHandler(
     internal static DateTimeOffset StartOfWeek(DateTimeOffset date)
     {
         var daysSinceMonday = ((int)date.DayOfWeek + 6) % 7;
-        return date.Date.AddDays(-daysSinceMonday);
+        return new DateTimeOffset(date.Year, date.Month, date.Day, 0, 0, 0, date.Offset)
+            .AddDays(-daysSinceMonday);
     }
 
     private static int CalculateStreak(IReadOnlyCollection<Episode> episodes, DateTimeOffset now)

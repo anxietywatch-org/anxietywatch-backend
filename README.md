@@ -1,6 +1,6 @@
 # AnxietyWatch API
 
-Base de AnxietyWatch sobre .NET 10 con Clean Architecture, DDD y CQRS.
+Backend de AnxietyWatch sobre .NET 10 con Clean Architecture, DDD y CQRS. Servicio REST con JWT para `https://github.com/Dianacoquette/AnxietyWatch.Web.git`.
 
 ## Proyectos
 
@@ -16,34 +16,6 @@ La configuración predeterminada usa el repositorio in-memory para que la API pu
 
 ```powershell
 dotnet run --project src/AnxietyWatch.Api/AnxietyWatch.Api.csproj
-```
-
-Endpoint implementado en esta base:
-
-```text
-GET /api/plans
-POST /api/auth/register
-POST /api/auth/login
-GET /api/auth/session
-POST /api/auth/logout
-POST /api/auth/password/forgot
-POST /api/auth/password/reset
-POST /api/auth/change-password
-GET /api/auth/verify-email/status
-POST /api/auth/verify-email/resend
-GET /api/dashboard/summary
-GET /api/episodes?range=7|30|90
-POST /api/episodes
-GET /api/tokens
-POST /api/tokens
-DELETE /api/tokens/{id}
-POST /api/tokens/{id}/accept
-POST /api/tokens/{id}/share
-GET /api/tokens/export
-PATCH /api/profile
-PATCH /api/settings
-GET /api/content/faq
-GET /api/content/testimonials
 ```
 
 Para activar MongoDB, defina los valores fuera del repositorio:
@@ -65,4 +37,262 @@ dotnet test AnxietyWatchAPI.slnx --configuration Release
 dotnet list AnxietyWatchAPI.slnx package --vulnerable --include-transitive
 ```
 
-La autenticación JWT, la revocación de tokens, los límites de plan y los primeros recursos protegidos están implementados como slices verticales. Los contratos restantes definidos en la especificación se incorporarán siguiendo el mismo patrón. No se almacenan secretos en `appsettings.json`.
+## Contrato de API (para el equipo del frontend)
+
+Todas las respuestas y peticiones JSON usan nombres de campos en **camelCase**. Los endpoints protegidos requieren la cabecera:
+
+```text
+Authorization: Bearer <token>
+```
+
+### Errores
+
+Los errores devuelven `application/problem+json` con esta forma:
+
+```json
+{
+  "type": "https://httpstatuses.com/400",
+  "title": "Mensaje del error",
+  "status": 400,
+  "traceId": "..."
+}
+```
+
+Códigos usados: `400` validación, `401` credenciales/sesión inválidas, `403` cuota de plan superada o recurso ajeno, `404` no encontrado, `409` conflicto (email duplicado, token usado), `410` token de recuperación expirado, `429` demasiados intentos (incluye `Retry-After` en segundos).
+
+### Autenticación
+
+#### POST /api/auth/register — 201
+
+```json
+{
+  "fullName": "Ana Pérez",
+  "email": "ana@example.com",
+  "password": "secret123",
+  "planId": "free",
+  "billingCycle": "monthly"
+}
+```
+
+- `planId`: `free` | `individual` | `family` | `professional`.
+- `billingCycle`: `monthly` | `yearly`.
+- `paymentMethodToken` es **opcional** (la integración de pagos está pendiente); en el plan `free` debe omitirse.
+- `fullName` 2-60 caracteres; `password` 8-30 caracteres (sin requisitos de mayúsculas/dígitos).
+- `409` si el email ya está registrado.
+
+```json
+{
+  "token": "<jwt>",
+  "expiresAt": "2026-08-06T12:00:00Z",
+  "user": {
+    "id": "guid",
+    "fullName": "Ana Pérez",
+    "email": "ana@example.com",
+    "planId": "free",
+    "emailVerified": false,
+    "avatarUrl": null
+  }
+}
+```
+
+#### POST /api/auth/login — 200
+
+```json
+{ "email": "ana@example.com", "password": "secret123" }
+```
+
+Devuelve el mismo `{ token, expiresAt, user }`. `401` con credenciales incorrectas; `429` tras 5 intentos fallidos (bloqueo de 60 segundos, cabecera `Retry-After`).
+
+#### GET /api/auth/session — 200 (protegido)
+
+Devuelve `{ token, expiresAt, user }` (misma forma que login, con un token nuevo) para restaurar la sesión en el cliente.
+
+#### POST /api/auth/logout — 200 (protegido)
+
+Sin cuerpo. Revoca el JWT actual; responde `{ "success": true }`.
+
+#### POST /api/auth/password/forgot — 200
+
+```json
+{ "email": "ana@example.com" }
+```
+
+Respuesta genérica: `{ "message": "..." }` (siempre igual para no revelar emails existentes).
+
+#### POST /api/auth/password/reset — 200
+
+```json
+{ "token": "<token-del-correo>", "newPassword": "nueva123" }
+```
+
+Responde `{ "message": "Password updated" }`. `410` si el token expiró (30 min) o ya se usó.
+
+#### POST /api/auth/change-password — 200 (protegido)
+
+```json
+{ "currentPassword": "vieja123", "newPassword": "nueva123" }
+```
+
+#### GET /api/auth/verify-email/status — 200 (protegido)
+
+```json
+{ "emailVerified": false }
+```
+
+#### POST /api/auth/verify-email/resend — 200 (protegido)
+
+Sin cuerpo. Responde `{ "message": "..." }`. Cooldown de 60 s → `429`.
+
+### Planes
+
+#### GET /api/plans — 200 (público)
+
+```json
+[
+  {
+    "id": "free",
+    "name": "Gratuito",
+    "priceMonthly": 0,
+    "priceYearly": 0,
+    "features": ["Dashboard"],
+    "limitations": ["1 token"],
+    "idealFor": "Uso personal"
+  }
+]
+```
+
+### Dashboard
+
+#### GET /api/dashboard/summary — 200 (protegido)
+
+```json
+{
+  "anxietyLevel": { "current": 3, "trend": "up" },
+  "weeklyRecords": { "used": 2, "limit": 5 },
+  "streakDays": 4,
+  "exercisesCompleted": 0
+}
+```
+
+`trend`: `up` | `down` | `stable`. `limit` es `null` en planes de pago.
+
+### Episodios
+
+#### GET /api/episodes?range=7|30|90 — 200 (protegido)
+
+```json
+[
+  {
+    "id": "guid",
+    "date": "2026-08-06T12:00:00Z",
+    "intensity": 3,
+    "symptoms": ["palpitaciones"],
+    "notes": null
+  }
+]
+```
+
+#### POST /api/episodes — 201 (protegido)
+
+```json
+{ "intensity": 3, "symptoms": ["palpitaciones"], "notes": "..." }
+```
+
+- `intensity` 0-100; `notes` máx. 500 caracteres.
+- `403` en plan `free` al superar 5 episodios por semana.
+
+### Tokens de vinculación (protegido)
+
+#### GET /api/tokens — 200
+
+```json
+[
+  {
+    "id": "guid",
+    "code": "AW-7K2P-9D4M-8Q2L",
+    "role": "family_member",
+    "expiresAt": "2026-09-05T12:00:00Z",
+    "status": "pending"
+  }
+]
+```
+
+`role`: `self` | `family_member` | `patient`. `status`: `pending` | `accepted` | `deleted`. Vencen a los 30 días.
+
+#### POST /api/tokens — 201
+
+```json
+{ "role": "family_member" }
+```
+
+Cuotas por plan: `free`/`individual` 1, `family` 5, `professional` 20. `403` si se supera la cuota.
+
+#### DELETE /api/tokens/{id} — 200
+
+Responde `{ "success": true }`. `409` si el token ya fue aceptado.
+
+#### POST /api/tokens/{id}/accept — 200
+
+```json
+{ "deviceId": "dispositivo-abc" }
+```
+
+Responde `{ "status": "accepted" }`. `409` si está expirado o usado.
+
+#### POST /api/tokens/{id}/share — 200
+
+```json
+{ "recipientEmail": "familiar@example.com" }
+```
+
+Responde `{ "sent": true }`.
+
+#### GET /api/tokens/export — 200
+
+Descarga `tokens.csv` (`text/csv`).
+
+### Perfil y ajustes (protegido)
+
+#### PATCH /api/profile — 200
+
+```json
+{ "fullName": "Ana Pérez", "avatarUrl": null }
+```
+
+Responde `{ "fullName": "...", "avatarUrl": null }`.
+
+#### PATCH /api/settings — 200
+
+```json
+{ "anxietyThreshold": 70, "pushNotifications": true, "privateMode": false }
+```
+
+Responde `{ "anxietyThreshold": 70, "pushNotifications": true, "privateMode": false }`. `403` si `privateMode: true` en plan `free`.
+
+### Contenido
+
+#### GET /api/content/faq — 200 (público)
+
+```json
+[{ "question": "...", "answer": "..." }]
+```
+
+#### GET /api/content/testimonials — 200 (público)
+
+```json
+[]
+```
+
+### CORS
+
+Política `Frontend` habilitada con orígenes configurados en `Cors:AllowedOrigins` (comma-separated). Valores predeterminados para desarrollo del frontend: `http://localhost:5222,https://localhost:7130`.
+
+## Despliegue en Render
+
+El archivo `render.yaml` define un Web Service Docker con health check en `/health` y puerto `10000`. No requiere variables manuales: usa el proveedor InMemory y `Jwt__SigningKey` auto-generado.
+
+1. En Render, seleccionar **New > Blueprint** y conectar este repositorio de GitHub.
+2. Confirmar el servicio definido en `render.yaml` (rama `main`, auto-deploy en cada push).
+3. Esperar el deploy y comprobar `https://<servicio>.onrender.com/health` → `{ "status": "ok" }`.
+
+Nota: usuarios, episodios y tokens quedan en memoria (se reinician con cada deploy). Para persistir, definir `Persistence__Provider=Mongo` y `Mongo__ConnectionString` desde el dashboard. Para producción, definir `Cors__AllowedOrigins` con la URL del frontend (vacío = cualquier origen).
