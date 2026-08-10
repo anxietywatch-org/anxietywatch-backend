@@ -35,11 +35,14 @@ public sealed class ExceptionHandlingMiddleware(
             }
 
             context.Response.ContentType = "application/problem+json";
+            var title = context.Response.StatusCode >= StatusCodes.Status500InternalServerError
+                ? "An unexpected server error occurred."
+                : exception.Message;
 
             await context.Response.WriteAsync(JsonSerializer.Serialize(new
             {
                 type = $"https://httpstatuses.com/{context.Response.StatusCode}",
-                title = exception.Message,
+                title,
                 status = context.Response.StatusCode,
                 traceId = context.TraceIdentifier
             }));
