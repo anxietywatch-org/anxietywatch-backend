@@ -7,7 +7,8 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_HTTP_PORTS: 8080
-      Persistence__Provider: Mongo
+      # Set Persistence__Provider=InMemory temporarily while MongoDB Atlas is repaired.
+      Persistence__Provider: ${Persistence__Provider:-Mongo}
       Mongo__ConnectionString: ${MONGO_ATLAS_CONNECTION_STRING}
       Mongo__DatabaseName: anxietywatch
       Jwt__SigningKey: ${JWT_SIGNING_KEY}

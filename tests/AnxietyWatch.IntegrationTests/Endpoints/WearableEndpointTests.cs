@@ -53,6 +53,19 @@ public sealed class WearableEndpointTests(CustomWebApplicationFactory factory)
 
         (await client.PostAsJsonAsync("/api/v1/telemetry/batch", batch)).StatusCode.Should().Be(HttpStatusCode.Accepted);
         (await client.PostAsJsonAsync("/api/v1/telemetry/batch", batch)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var sos = new
+        {
+            eventId = Guid.NewGuid(),
+            deviceId = Guid.NewGuid(),
+            userId = (Guid?)null,
+            triggeredAt = DateTimeOffset.UtcNow,
+            source = "WATCH",
+            reason = "Test alert"
+        };
+
+        (await client.PostAsJsonAsync("/api/v1/sos/trigger", sos)).StatusCode.Should().Be(HttpStatusCode.Accepted);
+        (await client.PostAsJsonAsync("/api/v1/sos/trigger", sos)).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     private sealed record AuthResponse(string Token);
