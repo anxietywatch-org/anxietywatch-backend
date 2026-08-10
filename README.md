@@ -287,6 +287,13 @@ Responde `{ "anxietyThreshold": 70, "pushNotifications": true, "privateMode": fa
 
 Política `Frontend` habilitada con orígenes configurados en `Cors:AllowedOrigins` (comma-separated). Valores predeterminados para desarrollo del frontend: `http://localhost:5222,https://localhost:7130`.
 
+### Fallback temporal para MongoDB Atlas
+
+Si Atlas presenta un problema de conectividad, configure `Persistence__Provider=InMemory` en el entorno de
+la Droplet y ejecute el pipeline normal de `develop`. Esta opción permite validar autenticación, planes,
+telemetría y SOS, pero los datos se perderán al reiniciar o volver a desplegar el contenedor. Cuando Atlas
+esté disponible, quite la variable o establézcala de nuevo en `Mongo` y vuelva a desplegar mediante el pipeline.
+
 ## Despliegue en Render
 
 El archivo `render.yaml` define un Web Service Docker con health check en `/health` y puerto `10000`. No requiere variables manuales: usa el proveedor InMemory y `Jwt__SigningKey` auto-generado.
