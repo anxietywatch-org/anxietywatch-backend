@@ -289,10 +289,10 @@ Política `Frontend` habilitada con orígenes configurados en `Cors:AllowedOrigi
 
 ### Fallback temporal para MongoDB Atlas
 
-Si Atlas presenta un problema de conectividad, configure `Persistence__Provider=InMemory` en el entorno de
-la Droplet y ejecute el pipeline normal de `develop`. Esta opción permite validar autenticación, planes,
-telemetría y SOS, pero los datos se perderán al reiniciar o volver a desplegar el contenedor. Cuando Atlas
-esté disponible, quite la variable o establézcala de nuevo en `Mongo` y vuelva a desplegar mediante el pipeline.
+Mientras Atlas presenta un problema de conectividad, el compose de producción usa `InMemory` cuando
+`Persistence__Provider` no está definida. Esta opción permite validar autenticación, planes, telemetría y
+SOS, pero los datos se perderán al reiniciar o volver a desplegar el contenedor. Cuando Atlas esté disponible,
+configure `Persistence__Provider=Mongo` en el entorno de la Droplet y vuelva a desplegar mediante el pipeline.
 
 ## Despliegue en Render
 
