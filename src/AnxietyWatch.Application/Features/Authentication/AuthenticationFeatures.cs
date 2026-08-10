@@ -6,6 +6,7 @@ using AnxietyWatch.Application.Common;
 using AnxietyWatch.Domain.Users;
 using FluentValidation;
 using MediatR;
+using System.Text.Json.Serialization;
 
 namespace AnxietyWatch.Application.Features.Authentication;
 
@@ -23,12 +24,12 @@ public sealed record AuthenticationResponse(
     UserResponse User);
 
 public sealed record RegisterCommand(
-    string FullName,
-    string Email,
-    string Password,
-    string PlanId,
-    string BillingCycle,
-    string? PaymentMethodToken) : IRequest<AuthenticationResponse>;
+    [property: JsonPropertyName("fullName")] string FullName,
+    [property: JsonPropertyName("email")] string Email,
+    [property: JsonPropertyName("password")] string Password,
+    [property: JsonPropertyName("planId")] string PlanId,
+    [property: JsonPropertyName("billingCycle")] string BillingCycle,
+    [property: JsonPropertyName("paymentMethodToken")] string? PaymentMethodToken) : IRequest<AuthenticationResponse>;
 
 public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand>
 {

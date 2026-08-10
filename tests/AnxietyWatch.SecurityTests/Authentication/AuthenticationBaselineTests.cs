@@ -1,14 +1,15 @@
 using System.Net;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using FluentAssertions;
 
 namespace AnxietyWatch.SecurityTests.Authentication;
 
-public sealed class AuthenticationBaselineTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class AuthenticationBaselineTests : IClassFixture<SecurityWebApplicationFactory>
 {
     private readonly HttpClient client;
 
-    public AuthenticationBaselineTests(WebApplicationFactory<Program> factory)
+    public AuthenticationBaselineTests(SecurityWebApplicationFactory factory)
     {
         client = factory.CreateClient();
     }
@@ -28,4 +29,10 @@ public sealed class AuthenticationBaselineTests : IClassFixture<WebApplicationFa
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
+}
+
+public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Program>
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder) =>
+        builder.UseEnvironment("Testing");
 }

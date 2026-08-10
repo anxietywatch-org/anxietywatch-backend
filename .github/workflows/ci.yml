@@ -113,3 +113,23 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy-droplet:
+    needs: build-docker-image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Load restricted deployment key
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.DO_DEPLOY_SSH_KEY }}
+      - name: Trust the Droplet host key
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' '157.230.48.215 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII7xneNufO7X5ZGTHXa7FvmWoOpIaiDesHFq7RTOzktR' > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Run the restricted deployment command
+        run: ssh root@157.230.48.215

@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0-jammy
+    container_name: anxietywatch-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-anxietywatch}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - anxietywatch_network
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh localhost:27017/anxietywatch --eval \"db.runCommand({ping:1})\" --quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: anxietywatch-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ASPNETCORE_HTTP_PORTS: 8080
+      Persistence__Provider: ${Persistence__Provider:-Mongo}
+      Mongo__ConnectionString: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongodb:27017/${MONGO_DATABASE:-anxietywatch}?authSource=admin
+      Mongo__DatabaseName: ${MONGO_DATABASE:-anxietywatch}
+      Jwt__SigningKey: ${JWT_SIGNING_KEY}
+    ports:
+      - "8080:8080"
+    networks:
+      - anxietywatch_network
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+  mongodb_config:
+
+networks:
+  anxietywatch_network:
+    driver: bridge
+
+

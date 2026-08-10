@@ -24,6 +24,11 @@ ENV ASPNETCORE_HTTP_PORTS=10000
 ENV DOTNET_EnableDiagnostics=0
 COPY --from=build /app/publish ./
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 EXPOSE 10000
 USER 10001
 ENTRYPOINT ["dotnet", "AnxietyWatch.Api.dll"]

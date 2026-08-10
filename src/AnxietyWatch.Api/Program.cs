@@ -22,7 +22,9 @@ if (string.IsNullOrWhiteSpace(signingKey))
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddControllers();
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(options => options.JsonSerializerOptions.PropertyNameCaseInsensitive = true);
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -87,7 +89,7 @@ builder.Services
 var app = builder.Build();
 
 app.UseMiddleware<AnxietyWatch.Api.Middleware.ExceptionHandlingMiddleware>();
-if (!app.Environment.IsProduction())
+if (!app.Environment.IsProduction() && !app.Environment.IsEnvironment("Testing"))
 {
     app.UseHttpsRedirection();
 }
@@ -95,8 +97,15 @@ if (!app.Environment.IsProduction())
 app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapControllers();
+
+app.MapGet("/health", () => Results.Ok(new
+{
+    status = "ok",
+    service = "AnxietyWatch.API",
+    version = "1.0.0",
+    timestamp = DateTime.UtcNow
+})).ExcludeFromDescription();
 
 app.Run();
 

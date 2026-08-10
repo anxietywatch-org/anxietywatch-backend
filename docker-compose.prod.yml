@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  api:
+    image: ghcr.io/anxietywatch-org/anxietywatch-backend:develop
+    container_name: anxietywatch-api-prod
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: 8080
+      # Set Persistence__Provider=InMemory temporarily while MongoDB Atlas is repaired.
+      Persistence__Provider: ${Persistence__Provider:-Mongo}
+      Mongo__ConnectionString: ${MONGO_ATLAS_CONNECTION_STRING}
+      Mongo__DatabaseName: anxietywatch
+      Jwt__SigningKey: ${JWT_SIGNING_KEY}
+    networks:
+      - anxietywatch_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+networks:
+  anxietywatch_network:
+    driver: bridge
+    external: false
