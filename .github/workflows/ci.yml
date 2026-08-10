@@ -73,7 +73,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          cache-to: type=gha,mode=max
 
   build-docker-image-do:
     needs: build-and-test
