@@ -25,6 +25,24 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services
     .AddControllers()
     .AddJsonOptions(options => options.JsonSerializerOptions.PropertyNameCaseInsensitive = true);
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy =>
+    {
+        var origins = builder.Configuration["Cors:AllowedOrigins"]
+            ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (origins is { Length: > 0 })
+        {
+            policy.WithOrigins(origins);
+        }
+        else
+        {
+            policy.AllowAnyOrigin();
+        }
+
+        policy.AllowAnyHeader().AllowAnyMethod();
+    });
+});
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("FamilyPlan", policy => policy.RequireClaim("plan", "family"));
@@ -71,15 +89,21 @@ builder.Services
 var app = builder.Build();
 
 app.UseMiddleware<AnxietyWatch.Api.Middleware.ExceptionHandlingMiddleware>();
-app.UseHttpsRedirection();
+if (!app.Environment.IsProduction() && !app.Environment.IsEnvironment("Testing"))
+{
+    app.UseHttpsRedirection();
+}
+
+app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
 app.MapGet("/health", () => Results.Ok(new
 {
-    status = "Healthy",
+    status = "ok",
     service = "AnxietyWatch.API",
+    version = "1.0.0",
     timestamp = DateTime.UtcNow
 })).ExcludeFromDescription();
 

@@ -34,9 +34,10 @@ public sealed class AuthenticationEndpointTests(CustomWebApplicationFactory fact
         var sessionResponse = await client.GetAsync("/api/auth/session");
 
         sessionResponse.IsSuccessStatusCode.Should().BeTrue();
-        var session = await sessionResponse.Content.ReadFromJsonAsync<UserResponse>();
-        session!.Email.Should().Be(email);
-        session.PlanId.Should().Be("free");
+        var session = await sessionResponse.Content.ReadFromJsonAsync<AuthResponse>();
+        session!.Token.Should().NotBeNullOrWhiteSpace();
+        session.User.Email.Should().Be(email);
+        session.User.PlanId.Should().Be("free");
     }
 
     [Fact]
