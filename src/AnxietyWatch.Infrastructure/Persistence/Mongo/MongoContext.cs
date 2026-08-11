@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using MongoDB.Bson;
 using MongoDB.Driver;
 
 namespace AnxietyWatch.Infrastructure.Persistence.Mongo;
@@ -13,7 +14,28 @@ public sealed class MongoContext
             ?? throw new InvalidOperationException("Mongo:DatabaseName is not configured.");
 
         Database = new MongoClient(connectionString).GetDatabase(databaseName);
+        EnsureIndexes();
     }
 
     public IMongoDatabase Database { get; }
+
+    private void EnsureIndexes()
+    {
+        CreateIndex("users", Builders<BsonDocument>.IndexKeys.Ascending("email"), unique: true);
+        CreateIndex("episodes", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("date"));
+        CreateIndex("link_tokens", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("expiresAt"));
+        CreateIndex("revoked_tokens", Builders<BsonDocument>.IndexKeys.Ascending("expiresAt"), expiresAfter: TimeSpan.Zero);
+        CreateIndex("password_reset_tokens", Builders<BsonDocument>.IndexKeys.Ascending("expiresAt"), expiresAfter: TimeSpan.Zero);
+    }
+
+    private void CreateIndex(
+        string collectionName,
+        IndexKeysDefinition<BsonDocument> keys,
+        bool unique = false,
+        TimeSpan? expiresAfter = null)
+    {
+        var options = new CreateIndexOptions { Unique = unique, ExpireAfter = expiresAfter };
+        Database.GetCollection<BsonDocument>(collectionName).Indexes.CreateOne(
+            new CreateIndexModel<BsonDocument>(keys, options));
+    }
 }

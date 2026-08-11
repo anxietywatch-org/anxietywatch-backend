@@ -13,6 +13,26 @@ public sealed class LinkToken : Entity
         ExpiresAt = expiresAt;
     }
 
+    public static LinkToken Restore(
+        Guid id,
+        Guid userId,
+        string code,
+        string role,
+        DateTimeOffset expiresAt,
+        TokenStatus status,
+        Guid? acceptedBy,
+        DateTimeOffset? acceptedAt)
+    {
+        var token = new LinkToken(id, userId, code, role, expiresAt)
+        {
+            Status = status,
+            AcceptedBy = acceptedBy,
+            AcceptedAt = acceptedAt
+        };
+
+        return token;
+    }
+
     public Guid UserId { get; }
     public string Code { get; }
     public string Role { get; }
