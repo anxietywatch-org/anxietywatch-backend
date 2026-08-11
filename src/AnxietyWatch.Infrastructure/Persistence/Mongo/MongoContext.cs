@@ -21,6 +21,7 @@ public sealed class MongoContext
 
     private void EnsureIndexes()
     {
+        CreateIndex("plans", Builders<BsonDocument>.IndexKeys.Ascending("id"), unique: true);
         CreateIndex("users", Builders<BsonDocument>.IndexKeys.Ascending("email"), unique: true);
         CreateIndex("episodes", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("date"));
         CreateIndex("link_tokens", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("expiresAt"));
