@@ -17,6 +17,38 @@ public sealed class User : AggregateRoot
         PlanId = planId;
     }
 
+    public static User Restore(
+        Guid id,
+        string fullName,
+        string email,
+        string passwordHash,
+        string planId,
+        bool emailVerified,
+        DateTimeOffset? lastVerificationEmailSentAt,
+        string? avatarUrl,
+        int anxietyThreshold,
+        bool pushNotifications,
+        bool privateMode,
+        int failedLoginAttempts,
+        DateTimeOffset? firstFailedLoginAt,
+        DateTimeOffset? lockoutUntil)
+    {
+        var user = new User(id, fullName, email, passwordHash, planId)
+        {
+            EmailVerified = emailVerified,
+            LastVerificationEmailSentAt = lastVerificationEmailSentAt,
+            AvatarUrl = avatarUrl,
+            AnxietyThreshold = anxietyThreshold,
+            PushNotifications = pushNotifications,
+            PrivateMode = privateMode,
+            FailedLoginAttempts = failedLoginAttempts,
+            FirstFailedLoginAt = firstFailedLoginAt,
+            LockoutUntil = lockoutUntil
+        };
+
+        return user;
+    }
+
     public string FullName { get; private set; } = string.Empty;
     public string Email { get; private set; } = string.Empty;
     public string PasswordHash { get; private set; } = string.Empty;

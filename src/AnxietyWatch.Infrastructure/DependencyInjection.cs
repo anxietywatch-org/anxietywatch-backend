@@ -16,15 +16,10 @@ public static class DependencyInjection
         IConfiguration configuration)
     {
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Caching.ICacheService, NoOpCacheService>();
-        services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, InMemoryEpisodeRepository>();
-        services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, InMemoryLinkTokenRepository>();
         services.AddHttpContextAccessor();
-        services.AddSingleton<IUserRepository, InMemoryUserRepository>();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordHasher, BcryptPasswordHasher>();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IJwtTokenService, JwtTokenService>();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.ICurrentUser, HttpCurrentUser>();
-        services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IRevokedTokenStore, InMemoryRevokedTokenStore>();
-        services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordResetTokenStore, InMemoryPasswordResetTokenStore>();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IEmailSender, LoggingEmailSender>();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Time.ISystemClock, SystemClock>();
 
@@ -33,11 +28,21 @@ public static class DependencyInjection
             services.AddSingleton<MongoContext>();
             services.AddSingleton<IPlanRepository, MongoPlanRepository>();
             services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IWearableSyncRepository, MongoWearableSyncRepository>();
+            services.AddSingleton<IUserRepository, MongoUserRepository>();
+            services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, MongoEpisodeRepository>();
+            services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, MongoLinkTokenRepository>();
+            services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IRevokedTokenStore, MongoRevokedTokenStore>();
+            services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordResetTokenStore, MongoPasswordResetTokenStore>();
         }
         else
         {
             services.AddSingleton<IPlanRepository, InMemoryPlanRepository>();
             services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IWearableSyncRepository, InMemoryWearableSyncRepository>();
+            services.AddSingleton<IUserRepository, InMemoryUserRepository>();
+            services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, InMemoryEpisodeRepository>();
+            services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, InMemoryLinkTokenRepository>();
+            services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IRevokedTokenStore, InMemoryRevokedTokenStore>();
+            services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordResetTokenStore, InMemoryPasswordResetTokenStore>();
         }
 
         return services;
