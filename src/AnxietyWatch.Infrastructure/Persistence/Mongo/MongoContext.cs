@@ -24,6 +24,15 @@ public sealed class MongoContext
         CreateIndex("users", Builders<BsonDocument>.IndexKeys.Ascending("email"), unique: true);
         CreateIndex("episodes", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("date"));
         CreateIndex("link_tokens", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("expiresAt"));
+        var tokenQuotaIndex = new CreateIndexModel<BsonDocument>(
+            Builders<BsonDocument>.IndexKeys.Ascending("userId").Ascending("quotaSlot"),
+            new CreateIndexOptions<BsonDocument>
+            {
+                Name = "ux_link_tokens_active_slot",
+                Unique = true,
+                PartialFilterExpression = Builders<BsonDocument>.Filter.Eq("quotaActive", true)
+            });
+        Database.GetCollection<BsonDocument>("link_tokens").Indexes.CreateOne(tokenQuotaIndex);
         CreateIndex("revoked_tokens", Builders<BsonDocument>.IndexKeys.Ascending("expiresAt"), expiresAfter: TimeSpan.Zero);
         CreateIndex("password_reset_tokens", Builders<BsonDocument>.IndexKeys.Ascending("expiresAt"), expiresAfter: TimeSpan.Zero);
     }

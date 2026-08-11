@@ -9,12 +9,28 @@ public sealed class MongoRevokedTokenStore(MongoContext context) : IRevokedToken
 {
     private readonly IMongoCollection<BsonDocument> revokedTokens = context.Database.GetCollection<BsonDocument>("revoked_tokens");
 
-    public Task RevokeAsync(string jwtId, DateTimeOffset expiresAt, CancellationToken cancellationToken = default) =>
-        revokedTokens.ReplaceOneAsync(
-            Builders<BsonDocument>.Filter.Eq("_id", jwtId),
-            new BsonDocument { ["_id"] = jwtId, ["expiresAt"] = new BsonDateTime(expiresAt.UtcDateTime) },
-            new ReplaceOptions { IsUpsert = true },
-            cancellationToken);
+    public async Task RevokeAsync(
+        string jwtId,
+        DateTimeOffset expiresAt,
+        CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.Eq("_id", jwtId);
+        var update = Builders<BsonDocument>.Update
+            .SetOnInsert("_id", jwtId)
+            .Max("expiresAt", new BsonDateTime(expiresAt.UtcDateTime));
+        try
+        {
+            await revokedTokens.UpdateOneAsync(
+                filter,
+                update,
+                new UpdateOptions { IsUpsert = true },
+                cancellationToken);
+        }
+        catch (MongoWriteException exception) when (exception.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+        {
+            await revokedTokens.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+        }
+    }
 
     public async Task<bool> IsRevokedAsync(string jwtId, CancellationToken cancellationToken = default) =>
         await revokedTokens.Find(Builders<BsonDocument>.Filter.And(

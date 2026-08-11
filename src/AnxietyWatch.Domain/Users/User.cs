@@ -31,7 +31,8 @@ public sealed class User : AggregateRoot
         bool privateMode,
         int failedLoginAttempts,
         DateTimeOffset? firstFailedLoginAt,
-        DateTimeOffset? lockoutUntil)
+        DateTimeOffset? lockoutUntil,
+        long version)
     {
         var user = new User(id, fullName, email, passwordHash, planId)
         {
@@ -43,7 +44,8 @@ public sealed class User : AggregateRoot
             PrivateMode = privateMode,
             FailedLoginAttempts = failedLoginAttempts,
             FirstFailedLoginAt = firstFailedLoginAt,
-            LockoutUntil = lockoutUntil
+            LockoutUntil = lockoutUntil,
+            Version = version
         };
 
         return user;
@@ -62,6 +64,7 @@ public sealed class User : AggregateRoot
     public int FailedLoginAttempts { get; private set; }
     public DateTimeOffset? FirstFailedLoginAt { get; private set; }
     public DateTimeOffset? LockoutUntil { get; private set; }
+    public long Version { get; private set; }
 
     public void RegisterFailedLogin(DateTimeOffset now)
     {
@@ -74,7 +77,11 @@ public sealed class User : AggregateRoot
         FailedLoginAttempts++;
         if (FailedLoginAttempts >= 5)
         {
-            LockoutUntil = now.AddSeconds(60);
+            var candidate = now.AddSeconds(60);
+            if (LockoutUntil is null || candidate > LockoutUntil)
+            {
+                LockoutUntil = candidate;
+            }
         }
     }
 
@@ -103,4 +110,6 @@ public sealed class User : AggregateRoot
         PushNotifications = pushNotifications;
         PrivateMode = privateMode;
     }
+
+    public void MarkPersisted() => Version++;
 }

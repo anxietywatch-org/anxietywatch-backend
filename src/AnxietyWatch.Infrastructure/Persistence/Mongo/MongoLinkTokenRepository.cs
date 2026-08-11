@@ -1,3 +1,4 @@
+using AnxietyWatch.Application.Common;
 using AnxietyWatch.Domain.Tokens;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -13,7 +14,7 @@ public sealed class MongoLinkTokenRepository(MongoContext context) : ILinkTokenR
     {
         var filter = Builders<BsonDocument>.Filter.And(
             Builders<BsonDocument>.Filter.Eq("userId", userId.ToString()),
-            Builders<BsonDocument>.Filter.Ne("status", TokenStatus.Deleted.ToString()));
+            Builders<BsonDocument>.Filter.Ne("status", Status(TokenStatus.Deleted)));
         var documents = await Collection.Find(filter)
             .SortByDescending(document => document["expiresAt"])
             .ToListAsync(cancellationToken);
@@ -24,22 +25,42 @@ public sealed class MongoLinkTokenRepository(MongoContext context) : ILinkTokenR
     {
         var activeFilter = Builders<BsonDocument>.Filter.And(
             Builders<BsonDocument>.Filter.Eq("userId", token.UserId.ToString()),
-            Builders<BsonDocument>.Filter.Ne("status", TokenStatus.Deleted.ToString()));
-        var activeCount = await Collection.CountDocumentsAsync(activeFilter, cancellationToken: cancellationToken);
-        if (activeCount >= maximum)
+            Builders<BsonDocument>.Filter.Ne("status", Status(TokenStatus.Deleted)));
+        var activeDocuments = await Collection.Find(activeFilter)
+            .Project(Builders<BsonDocument>.Projection.Include("quotaSlot"))
+            .ToListAsync(cancellationToken);
+        if (activeDocuments.Count >= maximum)
         {
             return false;
         }
 
-        try
+        var occupiedSlots = activeDocuments
+            .Where(document => document.TryGetValue("quotaSlot", out var value) && value.IsInt32)
+            .Select(document => document["quotaSlot"].AsInt32)
+            .ToHashSet();
+        var availableSlots = maximum - activeDocuments.Count;
+        var candidates = Enumerable.Range(0, maximum)
+            .Where(slot => !occupiedSlots.Contains(slot))
+            .Take(availableSlots);
+
+        foreach (var slot in candidates)
         {
-            await Collection.InsertOneAsync(Map(token), cancellationToken: cancellationToken);
-            return true;
+            try
+            {
+                await Collection.InsertOneAsync(Map(token, slot), cancellationToken: cancellationToken);
+                return true;
+            }
+            catch (MongoWriteException exception) when (IsQuotaSlotConflict(exception))
+            {
+                // Another request reserved this quota slot; try the next candidate.
+            }
+            catch (MongoWriteException exception) when (exception.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+            {
+                throw new ConflictException("The token already exists.");
+            }
         }
-        catch (MongoWriteException exception) when (exception.WriteError?.Category == ServerErrorCategory.DuplicateKey)
-        {
-            return false;
-        }
+
+        return false;
     }
 
     public async Task<LinkToken?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -49,22 +70,59 @@ public sealed class MongoLinkTokenRepository(MongoContext context) : ILinkTokenR
         return document is null ? null : Map(document);
     }
 
-    public Task UpdateAsync(LinkToken token, CancellationToken cancellationToken = default) =>
-        Collection.ReplaceOneAsync(
-            Builders<BsonDocument>.Filter.Eq("_id", token.Id.ToString()),
-            Map(token),
-            cancellationToken: cancellationToken);
+    public async Task UpdateAsync(LinkToken token, CancellationToken cancellationToken = default)
+    {
+        var idFilter = Builders<BsonDocument>.Filter.Eq("_id", token.Id.ToString());
+        FilterDefinition<BsonDocument> filter;
+        UpdateDefinition<BsonDocument> update;
 
-    private static BsonDocument Map(LinkToken token) => new()
+        if (token.Status == TokenStatus.Accepted && token.AcceptedBy.HasValue && token.AcceptedAt.HasValue)
+        {
+            filter = Builders<BsonDocument>.Filter.And(
+                idFilter,
+                Builders<BsonDocument>.Filter.Or(
+                    Builders<BsonDocument>.Filter.Eq("status", Status(TokenStatus.Pending)),
+                    Builders<BsonDocument>.Filter.Exists("status", false)),
+                Builders<BsonDocument>.Filter.Gt("expiresAt", Date(token.AcceptedAt.Value)));
+            update = Builders<BsonDocument>.Update
+                .Set("status", Status(TokenStatus.Accepted))
+                .Set("acceptedBy", token.AcceptedBy.Value.ToString())
+                .Set("acceptedAt", Date(token.AcceptedAt.Value));
+        }
+        else if (token.Status == TokenStatus.Deleted)
+        {
+            filter = Builders<BsonDocument>.Filter.And(
+                idFilter,
+                Builders<BsonDocument>.Filter.Ne("status", Status(TokenStatus.Accepted)));
+            update = Builders<BsonDocument>.Update
+                .Set("status", Status(TokenStatus.Deleted))
+                .Set("quotaActive", false);
+        }
+        else
+        {
+            filter = idFilter;
+            update = Builders<BsonDocument>.Update.Set("status", Status(token.Status));
+        }
+
+        var result = await Collection.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+        if (result.MatchedCount == 0)
+        {
+            throw new ConflictException("The token state changed before the request completed.");
+        }
+    }
+
+    private static BsonDocument Map(LinkToken token, int quotaSlot) => new()
     {
         ["_id"] = token.Id.ToString(),
         ["userId"] = token.UserId.ToString(),
         ["code"] = token.Code,
         ["role"] = token.Role,
-        ["expiresAt"] = new BsonDateTime(token.ExpiresAt.UtcDateTime),
-        ["status"] = token.Status.ToString(),
-        ["acceptedBy"] = token.AcceptedBy is null ? BsonNull.Value : token.AcceptedBy.Value.ToString(),
-        ["acceptedAt"] = token.AcceptedAt is null ? BsonNull.Value : new BsonDateTime(token.AcceptedAt.Value.UtcDateTime)
+        ["expiresAt"] = Date(token.ExpiresAt),
+        ["status"] = Status(token.Status),
+        ["acceptedBy"] = BsonNull.Value,
+        ["acceptedAt"] = BsonNull.Value,
+        ["quotaSlot"] = quotaSlot,
+        ["quotaActive"] = true
     };
 
     private static LinkToken Map(BsonDocument document) => LinkToken.Restore(
@@ -73,9 +131,19 @@ public sealed class MongoLinkTokenRepository(MongoContext context) : ILinkTokenR
         document["code"].AsString,
         document["role"].AsString,
         new DateTimeOffset(document["expiresAt"].ToUniversalTime()),
-        Enum.Parse<TokenStatus>(document.GetValue("status", TokenStatus.Pending.ToString()).AsString),
-        document.TryGetValue("acceptedBy", out var acceptedBy) && !acceptedBy.IsBsonNull ? Guid.Parse(acceptedBy.AsString) : null,
+        Enum.Parse<TokenStatus>(document.GetValue("status", Status(TokenStatus.Pending)).AsString, true),
+        document.TryGetValue("acceptedBy", out var acceptedBy) && !acceptedBy.IsBsonNull
+            ? Guid.Parse(acceptedBy.AsString)
+            : null,
         document.TryGetValue("acceptedAt", out var acceptedAt) && !acceptedAt.IsBsonNull
             ? new DateTimeOffset(acceptedAt.ToUniversalTime())
             : null);
+
+    private static bool IsQuotaSlotConflict(MongoWriteException exception) =>
+        exception.WriteError?.Category == ServerErrorCategory.DuplicateKey &&
+        exception.Message.Contains("ux_link_tokens_active_slot", StringComparison.Ordinal);
+
+    private static string Status(TokenStatus status) => status.ToString();
+
+    private static BsonDateTime Date(DateTimeOffset value) => new(value.UtcDateTime);
 }
