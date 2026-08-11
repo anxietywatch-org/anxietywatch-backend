@@ -1,6 +1,6 @@
 # AnxietyWatch API
 
-Backend de AnxietyWatch sobre .NET 10 con Clean Architecture, DDD y CQRS. Servicio REST con JWT para `https://github.com/Dianacoquette/AnxietyWatch.Web.git`.
+Backend de AnxietyWatch sobre .NET 10 con Clean Architecture, DDD y CQRS. Servicio REST con JWT para `https://github.com/anxietywatch-org/anxietywatch-web`.
 
 ## Proyectos
 
@@ -295,19 +295,6 @@ Responde `{ "anxietyThreshold": 70, "pushNotifications": true, "privateMode": fa
 
 Política `Frontend` habilitada con orígenes configurados en `Cors:AllowedOrigins` (comma-separated). Valores predeterminados para desarrollo del frontend: `http://localhost:5222,https://localhost:7130`.
 
-### Fallback temporal para MongoDB Atlas
+## DevOps
 
-Mientras Atlas presenta un problema de conectividad, el compose de producción fuerza temporalmente `InMemory`.
-Esta opción permite validar autenticación, planes, telemetría y SOS, pero los datos se perderán al reiniciar o
-volver a desplegar el contenedor. Cuando Atlas esté disponible, restaure `Persistence__Provider: Mongo` en el
-compose, configure `Persistence__Provider=Mongo` en el entorno de la Droplet y vuelva a desplegar mediante el pipeline.
-
-## Despliegue en Render
-
-El archivo `render.yaml` define un Web Service Docker con health check en `/health` y puerto `10000`. No requiere variables manuales: usa el proveedor InMemory y `Jwt__SigningKey` auto-generado.
-
-1. En Render, seleccionar **New > Blueprint** y conectar este repositorio de GitHub.
-2. Confirmar el servicio definido en `render.yaml` (rama `main`, auto-deploy en cada push).
-3. Esperar el deploy y comprobar `https://<servicio>.onrender.com/health` → `{ "status": "ok" }`.
-
-Nota: usuarios, episodios y tokens quedan en memoria (se reinician con cada deploy). Para persistir, definir `Persistence__Provider=Mongo` y `Mongo__ConnectionString` desde el dashboard. Para producción, definir `Cors__AllowedOrigins` con la URL del frontend (vacío = cualquier origen).
+El despliegue operativo está documentado en [docs/DEVOPS.md](docs/DEVOPS.md). La rama desplegada de la API pública es `develop` y el endpoint estable es `https://api.mangoon.xyz`.
