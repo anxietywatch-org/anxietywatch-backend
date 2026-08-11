@@ -40,4 +40,10 @@ public interface IPasswordResetTokenStore
 public interface IEmailSender
 {
     Task SendAsync(string recipientEmail, string subject, string body, CancellationToken cancellationToken = default);
+    Task SendHtmlAsync(string recipientEmail, string subject, string htmlBody, CancellationToken cancellationToken = default);
+}
+
+public interface IEmailVerificationLinkFactory
+{
+    string Create(string token);
 }

@@ -183,6 +183,92 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
         return document is null ? null : Map(document);
     }
 
+    public async Task<EmailVerificationTokenState?> StoreEmailVerificationTokenAsync(
+        Guid id,
+        DateTimeOffset sentAt,
+        string tokenHash,
+        DateTimeOffset expiresAt,
+        long expectedVersion,
+        CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.And(
+            Builders<BsonDocument>.Filter.Eq("_id", id.ToString()),
+            VersionFilter(expectedVersion),
+            Builders<BsonDocument>.Filter.Ne("emailVerified", true));
+        var update = Builders<BsonDocument>.Update
+            .Set("lastVerificationEmailSentAt", Date(sentAt))
+            .Set("emailVerificationTokenHash", tokenHash)
+            .Set("emailVerificationTokenExpiresAt", Date(expiresAt))
+            .Inc("version", 1);
+        var document = await Collection.FindOneAndUpdateAsync(
+            filter,
+            update,
+            new FindOneAndUpdateOptions<BsonDocument> { ReturnDocument = ReturnDocument.Before },
+            cancellationToken);
+        return document is null
+            ? null
+            : new EmailVerificationTokenState(
+                ReadString(document, "emailVerificationTokenHash"),
+                ReadDate(document, "emailVerificationTokenExpiresAt"),
+                ReadDate(document, "lastVerificationEmailSentAt"));
+    }
+
+    public async Task<bool> ConfirmEmailAsync(
+        string tokenHash,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.And(
+            Builders<BsonDocument>.Filter.Eq("emailVerificationTokenHash", tokenHash),
+            Builders<BsonDocument>.Filter.Gt("emailVerificationTokenExpiresAt", Date(now)),
+            Builders<BsonDocument>.Filter.Ne("emailVerified", true));
+        var update = Builders<BsonDocument>.Update
+            .Set("emailVerified", true)
+            .Unset("emailVerificationTokenHash")
+            .Unset("emailVerificationTokenExpiresAt")
+            .Inc("version", 1);
+        var result = await Collection.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+        return result.MatchedCount == 1;
+    }
+
+    public Task RollbackEmailVerificationTokenAsync(
+        Guid id,
+        string tokenHash,
+        DateTimeOffset sentAt,
+        EmailVerificationTokenState previousState,
+        CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.And(
+            Builders<BsonDocument>.Filter.Eq("_id", id.ToString()),
+            Builders<BsonDocument>.Filter.Eq("emailVerificationTokenHash", tokenHash),
+            Builders<BsonDocument>.Filter.Eq("lastVerificationEmailSentAt", Date(sentAt)),
+            Builders<BsonDocument>.Filter.Ne("emailVerified", true));
+        var update = Builders<BsonDocument>.Update.Inc("version", 1);
+        if (previousState.TokenHash is not null && previousState.ExpiresAt is not null)
+        {
+            update = update
+                .Set("emailVerificationTokenHash", previousState.TokenHash)
+                .Set("emailVerificationTokenExpiresAt", Date(previousState.ExpiresAt.Value));
+        }
+        else
+        {
+            update = update
+                .Unset("emailVerificationTokenHash")
+                .Unset("emailVerificationTokenExpiresAt");
+        }
+
+        if (previousState.SentAt is not null)
+        {
+            update = update.Set("lastVerificationEmailSentAt", Date(previousState.SentAt.Value));
+        }
+        else
+        {
+            update = update.Unset("lastVerificationEmailSentAt");
+        }
+
+        return Collection.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+    }
+
     private static FilterDefinition<BsonDocument> VersionFilter(long version) => version == 0
         ? Builders<BsonDocument>.Filter.Or(
             Builders<BsonDocument>.Filter.Eq("version", 0),

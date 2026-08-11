@@ -69,4 +69,11 @@ public sealed class AuthController(ISender sender) : ControllerBase
     public async Task<ActionResult<object>> ResendVerification(
         CancellationToken cancellationToken) =>
         Ok(new { message = await sender.Send(new ResendVerificationEmailCommand(), cancellationToken) });
+
+    [AllowAnonymous]
+    [HttpPost("verify-email/confirm")]
+    public async Task<ActionResult<object>> ConfirmVerification(
+        ConfirmEmailCommand command,
+        CancellationToken cancellationToken) =>
+        Ok(new { message = await sender.Send(command, cancellationToken) });
 }

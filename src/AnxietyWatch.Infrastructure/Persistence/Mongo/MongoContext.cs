@@ -22,6 +22,10 @@ public sealed class MongoContext
     private void EnsureIndexes()
     {
         CreateIndex("users", Builders<BsonDocument>.IndexKeys.Ascending("email"), unique: true);
+        var verificationTokenIndex = new CreateIndexModel<BsonDocument>(
+            Builders<BsonDocument>.IndexKeys.Ascending("emailVerificationTokenHash"),
+            new CreateIndexOptions { Name = "ux_users_email_verification_token", Unique = true, Sparse = true });
+        Database.GetCollection<BsonDocument>("users").Indexes.CreateOne(verificationTokenIndex);
         CreateIndex("episodes", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("date"));
         CreateIndex("link_tokens", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("expiresAt"));
         var tokenQuotaIndex = new CreateIndexModel<BsonDocument>(

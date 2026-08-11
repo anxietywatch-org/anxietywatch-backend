@@ -16,6 +16,17 @@ public sealed class ResendEmailSender(
         string recipientEmail,
         string subject,
         string body,
+        CancellationToken cancellationToken = default) =>
+        await SendHtmlAsync(
+            recipientEmail,
+            subject,
+            $"<p>{WebUtility.HtmlEncode(body)}</p>",
+            cancellationToken);
+
+    public async Task SendHtmlAsync(
+        string recipientEmail,
+        string subject,
+        string htmlBody,
         CancellationToken cancellationToken = default)
     {
         var apiKey = configuration["Email:Resend:ApiKey"];
@@ -33,7 +44,7 @@ public sealed class ResendEmailSender(
                 from,
                 to = new[] { recipientEmail },
                 subject,
-                html = $"<p>{WebUtility.HtmlEncode(body)}</p>"
+                html = htmlBody
             })
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);

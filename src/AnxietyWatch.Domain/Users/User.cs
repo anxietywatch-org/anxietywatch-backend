@@ -96,6 +96,10 @@ public sealed class User : AggregateRoot
 
     public void MarkVerificationEmailSent(DateTimeOffset now) => LastVerificationEmailSentAt = now;
 
+    public void RestoreVerificationEmailSentAt(DateTimeOffset? sentAt) => LastVerificationEmailSentAt = sentAt;
+
+    public void VerifyEmail() => EmailVerified = true;
+
     public void UpdatePassword(string passwordHash) => PasswordHash = passwordHash;
 
     public void UpdateProfile(string fullName, string? avatarUrl)

@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.RegularExpressions;
 using AnxietyWatch.IntegrationTests.Infrastructure;
 using FluentAssertions;
 
@@ -94,7 +95,51 @@ public sealed class AuthenticationEndpointTests(CustomWebApplicationFactory fact
         fifthAttempt.Headers.RetryAfter.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task VerificationEmail_ShouldContainARealLinkAndConfirmOnce()
+    {
+        using var client = factory.CreateClient();
+        var email = $"{Guid.NewGuid():N}@example.test";
+        var registerResponse = await client.PostAsJsonAsync("/api/auth/register", new
+        {
+            fullName = "Verification Test User",
+            email,
+            password = "Password1",
+            planId = "free",
+            billingCycle = "monthly",
+            paymentMethodToken = (string?)null
+        });
+        var registration = await registerResponse.Content.ReadFromJsonAsync<AuthResponse>();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", registration!.Token);
+
+        var resendResponse = await client.PostAsync("/api/auth/verify-email/resend", null);
+
+        resendResponse.IsSuccessStatusCode.Should().BeTrue();
+        var emailMessage = factory.EmailSender.Messages.Single(message => message.Recipient == email);
+        emailMessage.Subject.Should().Be("Verify your AnxietyWatch email");
+        emailMessage.HtmlBody.Should().Contain("https://mangoon.xyz/verify-email#token=");
+        emailMessage.HtmlBody.Should().Contain("Verify email");
+        var token = Regex.Match(emailMessage.HtmlBody, "token=([A-F0-9]{64})").Groups[1].Value;
+        token.Should().HaveLength(64);
+
+        using var anonymousClient = factory.CreateClient();
+        var confirmation = await anonymousClient.PostAsJsonAsync(
+            "/api/auth/verify-email/confirm",
+            new { token });
+        var replay = await anonymousClient.PostAsJsonAsync(
+            "/api/auth/verify-email/confirm",
+            new { token });
+        var status = await client.GetFromJsonAsync<VerificationStatusResponse>(
+            "/api/auth/verify-email/status");
+
+        confirmation.IsSuccessStatusCode.Should().BeTrue();
+        replay.StatusCode.Should().Be(System.Net.HttpStatusCode.Gone);
+        status!.EmailVerified.Should().BeTrue();
+    }
+
     private sealed record AuthResponse(string Token, UserResponse User);
 
     private sealed record UserResponse(string Id, string FullName, string Email, string PlanId, bool EmailVerified);
+    private sealed record VerificationStatusResponse(bool EmailVerified);
 }

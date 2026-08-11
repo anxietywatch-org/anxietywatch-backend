@@ -141,7 +141,15 @@ Responde `{ "message": "Password updated" }`. `410` si el token expiró (30 min)
 
 #### POST /api/auth/verify-email/resend — 200 (protegido)
 
-Sin cuerpo. Responde `{ "message": "..." }`. Cooldown de 60 s → `429`.
+Sin cuerpo. Genera un token de un solo uso válido por 24 horas y envía un correo HTML con un enlace `Email:VerificationUrl#token=...`. El fragmento evita exponer el token en logs HTTP y cabeceras `Referer`; el frontend debe retirarlo del navegador y enviarlo al endpoint de confirmación. Responde `{ "message": "Verification email sent" }`. Cooldown de 60 s → `429`.
+
+#### POST /api/auth/verify-email/confirm — 200 (público)
+
+```json
+{ "token": "<token-del-enlace>" }
+```
+
+Responde `{ "message": "Email verified" }` y `GET /api/auth/verify-email/status` pasa a devolver `true`. El token se almacena únicamente como hash SHA-256, expira en 24 horas y sólo puede confirmarse una vez. Devuelve `410` si expiró, fue reemplazado por un reenvío o ya se utilizó.
 
 ### Planes
 

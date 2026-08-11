@@ -7,6 +7,7 @@ namespace AnxietyWatch.Infrastructure.Security;
 public sealed class InMemoryUserRepository : IUserRepository
 {
     private readonly ConcurrentDictionary<Guid, User> users = new();
+    private readonly Dictionary<string, VerificationToken> verificationTokens = new(StringComparer.Ordinal);
     private readonly object gate = new();
 
     public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -116,6 +117,91 @@ public sealed class InMemoryUserRepository : IUserRepository
         }
     }
 
+    public Task<EmailVerificationTokenState?> StoreEmailVerificationTokenAsync(
+        Guid id,
+        DateTimeOffset sentAt,
+        string tokenHash,
+        DateTimeOffset expiresAt,
+        long expectedVersion,
+        CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            if (!users.TryGetValue(id, out var user) ||
+                user.EmailVerified ||
+                user.Version != expectedVersion)
+            {
+                return Task.FromResult<EmailVerificationTokenState?>(null);
+            }
+
+            var previousToken = verificationTokens.FirstOrDefault(pair => pair.Value.UserId == id);
+            var previousState = new EmailVerificationTokenState(
+                previousToken.Key,
+                previousToken.Key is null ? null : previousToken.Value.ExpiresAt,
+                user.LastVerificationEmailSentAt);
+            if (previousToken.Key is not null)
+            {
+                verificationTokens.Remove(previousToken.Key);
+            }
+
+            user.MarkVerificationEmailSent(sentAt);
+            user.MarkPersisted();
+            verificationTokens[tokenHash] = new VerificationToken(id, expiresAt);
+            return Task.FromResult<EmailVerificationTokenState?>(previousState);
+        }
+    }
+
+    public Task<bool> ConfirmEmailAsync(
+        string tokenHash,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            if (!verificationTokens.Remove(tokenHash, out var token) ||
+                token.ExpiresAt <= now ||
+                !users.TryGetValue(token.UserId, out var user) ||
+                user.EmailVerified)
+            {
+                return Task.FromResult(false);
+            }
+
+            user.VerifyEmail();
+            user.MarkPersisted();
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task RollbackEmailVerificationTokenAsync(
+        Guid id,
+        string tokenHash,
+        DateTimeOffset sentAt,
+        EmailVerificationTokenState previousState,
+        CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            if (verificationTokens.TryGetValue(tokenHash, out var token) &&
+                token.UserId == id &&
+                users.TryGetValue(id, out var user) &&
+                user.LastVerificationEmailSentAt == sentAt)
+            {
+                verificationTokens.Remove(tokenHash);
+                if (previousState.TokenHash is not null && previousState.ExpiresAt is not null)
+                {
+                    verificationTokens[previousState.TokenHash] = new VerificationToken(
+                        id,
+                        previousState.ExpiresAt.Value);
+                }
+
+                user.RestoreVerificationEmailSentAt(previousState.SentAt);
+                user.MarkPersisted();
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
     private static User Clone(User user) => User.Restore(
         user.Id,
         user.FullName,
@@ -132,4 +218,6 @@ public sealed class InMemoryUserRepository : IUserRepository
         user.FirstFailedLoginAt,
         user.LockoutUntil,
         user.Version);
+
+    private sealed record VerificationToken(Guid UserId, DateTimeOffset ExpiresAt);
 }

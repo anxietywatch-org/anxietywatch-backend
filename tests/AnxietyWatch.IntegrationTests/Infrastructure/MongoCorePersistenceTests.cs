@@ -96,6 +96,77 @@ public sealed class MongoCorePersistenceTests : IClassFixture<MongoDbContainerFi
     }
 
     [Fact]
+    public async Task EmailVerification_ShouldReplaceExpireAndConsumeTokensAtomically()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var user = new User(Guid.NewGuid(), "Verification User", "verify@example.test", "hash", "free");
+        await users.AddAsync(user);
+        var stored = await users.GetByIdAsync(user.Id);
+
+        (await users.StoreEmailVerificationTokenAsync(
+            user.Id,
+            now,
+            "old-token-hash",
+            now.AddHours(24),
+            stored!.Version)).Should().NotBeNull();
+        stored = await users.GetByIdAsync(user.Id);
+        (await users.StoreEmailVerificationTokenAsync(
+            user.Id,
+            now.AddMinutes(1),
+            "current-token-hash",
+            now.AddHours(24),
+            stored!.Version)).Should().NotBeNull();
+
+        (await users.ConfirmEmailAsync("old-token-hash", now)).Should().BeFalse();
+        var confirmations = await Task.WhenAll(
+            users.ConfirmEmailAsync("current-token-hash", now),
+            users.ConfirmEmailAsync("current-token-hash", now));
+        confirmations.Should().ContainSingle(result => result);
+        confirmations.Should().ContainSingle(result => !result);
+        (await users.GetByIdAsync(user.Id))!.EmailVerified.Should().BeTrue();
+
+        var document = await context.Database.GetCollection<BsonDocument>("users")
+            .Find(Builders<BsonDocument>.Filter.Eq("_id", user.Id.ToString()))
+            .SingleAsync();
+        document.Contains("emailVerificationTokenHash").Should().BeFalse();
+        document.Contains("emailVerificationTokenExpiresAt").Should().BeFalse();
+
+        var expiredUser = new User(Guid.NewGuid(), "Expired User", "expired@example.test", "hash", "free");
+        await users.AddAsync(expiredUser);
+        (await users.StoreEmailVerificationTokenAsync(
+            expiredUser.Id,
+            now.AddDays(-2),
+            "expired-token-hash",
+            now.AddMinutes(-1),
+            0)).Should().NotBeNull();
+        (await users.ConfirmEmailAsync("expired-token-hash", now)).Should().BeFalse();
+
+        var rollbackUser = new User(Guid.NewGuid(), "Rollback User", "rollback@example.test", "hash", "free");
+        await users.AddAsync(rollbackUser);
+        await users.StoreEmailVerificationTokenAsync(
+            rollbackUser.Id,
+            now.AddMinutes(-2),
+            "delivered-token-hash",
+            now.AddHours(23),
+            0);
+        var rollbackSnapshot = await users.GetByIdAsync(rollbackUser.Id);
+        var previousState = await users.StoreEmailVerificationTokenAsync(
+            rollbackUser.Id,
+            now,
+            "failed-token-hash",
+            now.AddHours(24),
+            rollbackSnapshot!.Version);
+        await users.RollbackEmailVerificationTokenAsync(
+            rollbackUser.Id,
+            "failed-token-hash",
+            now,
+            previousState!);
+
+        (await users.ConfirmEmailAsync("failed-token-hash", now)).Should().BeFalse();
+        (await users.ConfirmEmailAsync("delivered-token-hash", now)).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task LinkTokenRepository_ShouldEnforceConcurrentQuotaAndConditionalStates()
     {
         var ownerId = Guid.NewGuid();

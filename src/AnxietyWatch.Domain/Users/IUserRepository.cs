@@ -1,5 +1,10 @@
 namespace AnxietyWatch.Domain.Users;
 
+public sealed record EmailVerificationTokenState(
+    string? TokenHash,
+    DateTimeOffset? ExpiresAt,
+    DateTimeOffset? SentAt);
+
 public interface IUserRepository
 {
     Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
@@ -17,5 +22,22 @@ public interface IUserRepository
         DateTimeOffset now,
         long expectedVersion,
         string expectedPasswordHash,
+        CancellationToken cancellationToken = default);
+    Task<EmailVerificationTokenState?> StoreEmailVerificationTokenAsync(
+        Guid id,
+        DateTimeOffset sentAt,
+        string tokenHash,
+        DateTimeOffset expiresAt,
+        long expectedVersion,
+        CancellationToken cancellationToken = default);
+    Task<bool> ConfirmEmailAsync(
+        string tokenHash,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+    Task RollbackEmailVerificationTokenAsync(
+        Guid id,
+        string tokenHash,
+        DateTimeOffset sentAt,
+        EmailVerificationTokenState previousState,
         CancellationToken cancellationToken = default);
 }

@@ -21,7 +21,7 @@ if (string.IsNullOrWhiteSpace(signingKey))
 }
 
 builder.Services.AddApplication();
-builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 builder.Services
     .AddControllers()
     .AddJsonOptions(options => options.JsonSerializerOptions.PropertyNameCaseInsensitive = true);

@@ -15,3 +15,11 @@ services:
         value: "10000"
       - key: Jwt__SigningKey
         generateValue: true
+      - key: Email__Provider
+        value: Resend
+      - key: Email__Resend__ApiKey
+        sync: false
+      - key: Email__From
+        value: AnxietyWatch <no-reply@mail.mangoon.xyz>
+      - key: Email__VerificationUrl
+        value: https://mangoon.xyz/verify-email
