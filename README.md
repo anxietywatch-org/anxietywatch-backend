@@ -295,12 +295,11 @@ Responde `{ "anxietyThreshold": 70, "pushNotifications": true, "privateMode": fa
 
 Política `Frontend` habilitada con orígenes configurados en `Cors:AllowedOrigins` (comma-separated). Valores predeterminados para desarrollo del frontend: `http://localhost:5222,https://localhost:7130`.
 
-### Fallback temporal para MongoDB Atlas
+### Persistencia en MongoDB Atlas
 
-Mientras Atlas presenta un problema de conectividad, el compose de producción fuerza temporalmente `InMemory`.
-Esta opción permite validar autenticación, planes, telemetría y SOS, pero los datos se perderán al reiniciar o
-volver a desplegar el contenedor. Cuando Atlas esté disponible, restaure `Persistence__Provider: Mongo` en el
-compose, configure `Persistence__Provider=Mongo` en el entorno de la Droplet y vuelva a desplegar mediante el pipeline.
+Producción utiliza `Persistence__Provider=Mongo`. La cadena SRV se mantiene exclusivamente en el archivo de entorno
+de la Droplet y no se almacena en Git. La primera versión que habilita los repositorios Mongo de datos centrales no
+migra los usuarios, episodios, tokens ni stores de seguridad que existieran únicamente en memoria antes del deploy.
 
 ## Despliegue en Render
 
@@ -310,4 +309,4 @@ El archivo `render.yaml` define un Web Service Docker con health check en `/heal
 2. Confirmar el servicio definido en `render.yaml` (rama `main`, auto-deploy en cada push).
 3. Esperar el deploy y comprobar `https://<servicio>.onrender.com/health` → `{ "status": "ok" }`.
 
-Nota: usuarios, episodios y tokens quedan en memoria (se reinician con cada deploy). Para persistir, definir `Persistence__Provider=Mongo` y `Mongo__ConnectionString` desde el dashboard. Para producción, definir `Cors__AllowedOrigins` con la URL del frontend (vacío = cualquier origen).
+Con `Persistence__Provider=Mongo`, usuarios, perfil/settings, episodios, tokens de vinculación, revocaciones JWT, tokens de recuperación, planes, telemetría y SOS se almacenan en MongoDB. Los índices de unicidad, cuota y expiración se crean al iniciar la aplicación. Para producción, definir `Cors__AllowedOrigins` con la URL del frontend.

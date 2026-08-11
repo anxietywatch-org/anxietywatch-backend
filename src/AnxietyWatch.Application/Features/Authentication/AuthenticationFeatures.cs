@@ -117,30 +117,43 @@ public sealed class LoginCommandHandler(
             throw new UnauthorizedApplicationException("Invalid credentials.");
         }
 
-        if (user.IsLockedOut(now))
+        while (true)
         {
-            var retryAfter = Math.Max(1, (int)Math.Ceiling((user.LockoutUntil!.Value - now).TotalSeconds));
-            throw new TooManyRequestsException("Too many failed login attempts.", retryAfter);
-        }
-
-        if (!passwordHasher.Verify(command.Password, user.PasswordHash))
-        {
-            user.RegisterFailedLogin(now);
-            await users.UpdateAsync(user, cancellationToken);
-
             if (user.IsLockedOut(now))
             {
-                throw new TooManyRequestsException("Too many failed login attempts.", 60);
+                var retryAfter = Math.Max(1, (int)Math.Ceiling((user.LockoutUntil!.Value - now).TotalSeconds));
+                throw new TooManyRequestsException("Too many failed login attempts.", retryAfter);
             }
 
-            throw new UnauthorizedApplicationException("Invalid credentials.");
-        }
+            if (!passwordHasher.Verify(command.Password, user.PasswordHash))
+            {
+                user = await users.RegisterFailedLoginAsync(user.Id, now, cancellationToken)
+                    ?? throw new UnauthorizedApplicationException("Invalid credentials.");
 
-        user.RegisterSuccessfulLogin();
-        await users.UpdateAsync(user, cancellationToken);
-        return RegisterCommandHandler.CreateResponse(
-            user,
-            jwtTokenService.Create(user.Id, user.Email, user.PlanId));
+                if (user.IsLockedOut(now))
+                {
+                    throw new TooManyRequestsException("Too many failed login attempts.", 60);
+                }
+
+                throw new UnauthorizedApplicationException("Invalid credentials.");
+            }
+
+            var authenticatedUser = await users.RegisterSuccessfulLoginAsync(
+                user.Id,
+                now,
+                user.Version,
+                user.PasswordHash,
+                cancellationToken);
+            if (authenticatedUser is not null)
+            {
+                return RegisterCommandHandler.CreateResponse(
+                    authenticatedUser,
+                    jwtTokenService.Create(authenticatedUser.Id, authenticatedUser.Email, authenticatedUser.PlanId));
+            }
+
+            user = await users.GetByIdAsync(user.Id, cancellationToken)
+                ?? throw new UnauthorizedApplicationException("Invalid credentials.");
+        }
     }
 }
 
@@ -267,10 +280,13 @@ public sealed class ResetPasswordCommandHandler(
             throw new GoneException("The recovery token is expired or has already been used.");
         }
 
-        var user = await users.GetByIdAsync(userId.Value, cancellationToken)
-            ?? throw new GoneException("The recovery token is invalid.");
-        user.UpdatePassword(passwordHasher.Hash(command.NewPassword));
-        await users.UpdateAsync(user, cancellationToken);
+        if (!await users.UpdatePasswordAsync(
+                userId.Value,
+                passwordHasher.Hash(command.NewPassword),
+                cancellationToken))
+        {
+            throw new GoneException("The recovery token is invalid.");
+        }
         return "Password updated";
     }
 }

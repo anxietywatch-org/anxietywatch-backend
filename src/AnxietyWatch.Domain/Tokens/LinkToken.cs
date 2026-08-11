@@ -21,6 +21,26 @@ public sealed class LinkToken : Entity
     public Guid? AcceptedBy { get; private set; }
     public DateTimeOffset? AcceptedAt { get; private set; }
 
+    public static LinkToken Rehydrate(
+        Guid id,
+        Guid userId,
+        string code,
+        string role,
+        DateTimeOffset expiresAt,
+        TokenStatus status,
+        Guid? acceptedBy,
+        DateTimeOffset? acceptedAt)
+    {
+        var token = new LinkToken(id, userId, code, role, expiresAt)
+        {
+            Status = status,
+            AcceptedBy = acceptedBy,
+            AcceptedAt = acceptedAt
+        };
+
+        return token;
+    }
+
     public void MarkDeleted() => Status = TokenStatus.Deleted;
 
     public void Accept(Guid userId, DateTimeOffset now)

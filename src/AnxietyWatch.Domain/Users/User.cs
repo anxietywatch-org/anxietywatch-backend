@@ -30,6 +30,41 @@ public sealed class User : AggregateRoot
     public int FailedLoginAttempts { get; private set; }
     public DateTimeOffset? FirstFailedLoginAt { get; private set; }
     public DateTimeOffset? LockoutUntil { get; private set; }
+    public long Version { get; private set; }
+
+    public static User Rehydrate(
+        Guid id,
+        string fullName,
+        string email,
+        string passwordHash,
+        string planId,
+        bool emailVerified,
+        DateTimeOffset? lastVerificationEmailSentAt,
+        string? avatarUrl,
+        int anxietyThreshold,
+        bool pushNotifications,
+        bool privateMode,
+        int failedLoginAttempts,
+        DateTimeOffset? firstFailedLoginAt,
+        DateTimeOffset? lockoutUntil,
+        long version)
+    {
+        var user = new User(id, fullName, email, passwordHash, planId)
+        {
+            EmailVerified = emailVerified,
+            LastVerificationEmailSentAt = lastVerificationEmailSentAt,
+            AvatarUrl = avatarUrl,
+            AnxietyThreshold = anxietyThreshold,
+            PushNotifications = pushNotifications,
+            PrivateMode = privateMode,
+            FailedLoginAttempts = failedLoginAttempts,
+            FirstFailedLoginAt = firstFailedLoginAt,
+            LockoutUntil = lockoutUntil,
+            Version = version
+        };
+
+        return user;
+    }
 
     public void RegisterFailedLogin(DateTimeOffset now)
     {
@@ -54,6 +89,8 @@ public sealed class User : AggregateRoot
     }
 
     public bool IsLockedOut(DateTimeOffset now) => LockoutUntil > now;
+
+    public void MarkPersisted() => Version++;
 
     public void MarkVerificationEmailSent(DateTimeOffset now) => LastVerificationEmailSentAt = now;
 
