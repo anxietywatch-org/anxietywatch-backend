@@ -7,12 +7,16 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_HTTP_PORTS: 8080
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      Cors__AllowedOrigins: http://localhost:5222,https://mangoon.xyz
       # Temporary diagnostic fallback. Revert to Mongo after Atlas connectivity
       # is verified and the inherited Droplet environment variable is corrected.
       Persistence__Provider: InMemory
       Mongo__ConnectionString: ${MONGO_ATLAS_CONNECTION_STRING}
       Mongo__DatabaseName: anxietywatch
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
+    ports:
+      - "127.0.0.1:8080:8080"
     networks:
       - anxietywatch_network
     healthcheck:
