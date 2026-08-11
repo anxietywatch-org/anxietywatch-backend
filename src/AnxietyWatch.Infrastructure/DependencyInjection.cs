@@ -20,7 +20,18 @@ public static class DependencyInjection
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordHasher, BcryptPasswordHasher>();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IJwtTokenService, JwtTokenService>();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.ICurrentUser, HttpCurrentUser>();
-        services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IEmailSender, LoggingEmailSender>();
+        if (string.Equals(configuration["Email:Provider"], "Resend", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddHttpClient<AnxietyWatch.Application.Abstractions.Security.IEmailSender, ResendEmailSender>(client =>
+            {
+                client.BaseAddress = new Uri("https://api.resend.com/");
+                client.Timeout = TimeSpan.FromSeconds(15);
+            });
+        }
+        else
+        {
+            services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IEmailSender, LoggingEmailSender>();
+        }
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Time.ISystemClock, SystemClock>();
 
         if (string.Equals(configuration["Persistence:Provider"], "Mongo", StringComparison.OrdinalIgnoreCase))
