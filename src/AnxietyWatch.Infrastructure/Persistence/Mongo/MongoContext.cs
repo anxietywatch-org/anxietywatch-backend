@@ -29,6 +29,7 @@ public sealed class MongoContext
         Database.GetCollection<BsonDocument>("users").Indexes.CreateOne(verificationTokenIndex);
         CreateIndex("episodes", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("date"));
         CreateIndex("link_tokens", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("expiresAt"));
+        CreateIndex("link_tokens", Builders<BsonDocument>.IndexKeys.Ascending("code"), unique: true);
         var tokenQuotaIndex = new CreateIndexModel<BsonDocument>(
             Builders<BsonDocument>.IndexKeys.Ascending("userId").Ascending("quotaSlot"),
             new CreateIndexOptions<BsonDocument>

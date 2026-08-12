@@ -47,6 +47,16 @@ public sealed class InMemoryLinkTokenRepository : ILinkTokenRepository
         }
     }
 
+    public Task<LinkToken?> GetByCodeAsync(string code, CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            var token = tokens.Values.FirstOrDefault(existing =>
+                string.Equals(existing.Code, code, StringComparison.OrdinalIgnoreCase));
+            return Task.FromResult(token is null ? null : Clone(token));
+        }
+    }
+
     public Task UpdateAsync(LinkToken token, CancellationToken cancellationToken = default)
     {
         lock (gate)

@@ -70,6 +70,13 @@ public sealed class MongoLinkTokenRepository(MongoContext context) : ILinkTokenR
         return document is null ? null : Map(document);
     }
 
+    public async Task<LinkToken?> GetByCodeAsync(string code, CancellationToken cancellationToken = default)
+    {
+        var document = await Collection.Find(Builders<BsonDocument>.Filter.Eq("code", code))
+            .FirstOrDefaultAsync(cancellationToken);
+        return document is null ? null : Map(document);
+    }
+
     public async Task UpdateAsync(LinkToken token, CancellationToken cancellationToken = default)
     {
         var idFilter = Builders<BsonDocument>.Filter.Eq("_id", token.Id.ToString());
