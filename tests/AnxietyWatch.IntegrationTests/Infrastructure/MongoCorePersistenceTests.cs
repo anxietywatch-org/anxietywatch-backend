@@ -265,7 +265,7 @@ public sealed class MongoCorePersistenceTests : IClassFixture<MongoDbContainerFi
         (await wearableSync.TryStoreSosCancellationAsync(otherUserId, otherCancellation)).Should().BeTrue();
 
         var documents = await context.Database.GetCollection<BsonDocument>("sos_cancellations")
-            .Find(Filter.Empty)
+            .Find(Builders<BsonDocument>.Filter.Empty)
             .ToListAsync();
         documents.Should().HaveCount(2);
         var document = documents.Single(item => item["userId"].AsString == userId.ToString());
