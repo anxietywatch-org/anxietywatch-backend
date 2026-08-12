@@ -8,7 +8,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_HTTP_PORTS: 8080
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
-      Cors__AllowedOrigins: http://localhost:5222,https://mangoon.xyz
+      Cors__AllowedOrigins: http://localhost:5222,https://mangoon.xyz,https://anxietywatch-web-g5mjb.ondigitalocean.app
       Persistence__Provider: Mongo
       Mongo__ConnectionString: ${MONGO_ATLAS_CONNECTION_STRING}
       Mongo__DatabaseName: anxietywatch
