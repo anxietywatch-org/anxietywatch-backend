@@ -217,7 +217,8 @@ public sealed class InMemoryUserRepository : IUserRepository
         user.FailedLoginAttempts,
         user.FirstFailedLoginAt,
         user.LockoutUntil,
-        user.Version);
+        user.Version,
+        user.SecurityVersion);
 
     private sealed record VerificationToken(Guid UserId, DateTimeOffset ExpiresAt);
 }

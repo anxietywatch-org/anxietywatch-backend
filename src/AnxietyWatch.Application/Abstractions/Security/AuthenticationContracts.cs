@@ -10,7 +10,7 @@ public interface IPasswordHasher
 
 public interface IJwtTokenService
 {
-    JwtToken Create(Guid userId, string email, string planId);
+    JwtToken Create(Guid userId, string email, string planId, long securityVersion);
 }
 
 public sealed record JwtToken(string AccessToken, DateTimeOffset ExpiresAt, string JwtId);
@@ -46,4 +46,9 @@ public interface IEmailSender
 public interface IEmailVerificationLinkFactory
 {
     string Create(string token);
+}
+
+public interface IPasswordRecoveryEmailQueue
+{
+    bool TryQueue(string normalizedEmail);
 }

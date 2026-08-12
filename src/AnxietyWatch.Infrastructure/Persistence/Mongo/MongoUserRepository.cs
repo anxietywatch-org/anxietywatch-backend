@@ -55,6 +55,7 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
             .Set("failedLoginAttempts", user.FailedLoginAttempts)
             .Set("firstFailedLoginAt", NullableDate(user.FirstFailedLoginAt))
             .Set("lockoutUntil", NullableDate(user.LockoutUntil))
+            .Set("securityVersion", user.SecurityVersion)
             .Inc("version", 1);
 
         var result = await Collection.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
@@ -73,6 +74,7 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
     {
         var update = Builders<BsonDocument>.Update
             .Set("passwordHash", passwordHash)
+            .Inc("securityVersion", 1)
             .Inc("version", 1);
         var result = await Collection.UpdateOneAsync(
             Builders<BsonDocument>.Filter.Eq("_id", id.ToString()),
@@ -289,7 +291,8 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
             ["pushNotifications"] = user.PushNotifications,
             ["privateMode"] = user.PrivateMode,
             ["failedLoginAttempts"] = user.FailedLoginAttempts,
-            ["version"] = user.Version
+            ["version"] = user.Version,
+            ["securityVersion"] = user.SecurityVersion
         };
 
         AddOptional(document, "lastVerificationEmailSentAt", user.LastVerificationEmailSentAt);
@@ -314,7 +317,8 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
         document.GetValue("failedLoginAttempts", 0).ToInt32(),
         ReadDate(document, "firstFailedLoginAt"),
         ReadDate(document, "lockoutUntil"),
-        document.GetValue("version", 0L).ToInt64());
+        document.GetValue("version", 0L).ToInt64(),
+        document.GetValue("securityVersion", 0L).ToInt64());
 
     private static void AddOptional(BsonDocument document, string name, DateTimeOffset? value)
     {

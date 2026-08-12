@@ -1,5 +1,6 @@
 using AnxietyWatch.Application.Abstractions.Security;
 using AnxietyWatch.Application.Abstractions.Time;
+using AnxietyWatch.Application.Common;
 using AnxietyWatch.Application.Features.Authentication;
 using AnxietyWatch.Domain.Users;
 using AnxietyWatch.Infrastructure.Security;
@@ -33,6 +34,7 @@ public sealed class InMemoryConcurrencyTests
         var stored = await repository.GetByIdAsync(user.Id);
         stored!.PasswordHash.Should().Be("new-hash");
         stored.FailedLoginAttempts.Should().Be(0);
+        stored.SecurityVersion.Should().Be(1);
     }
 
     [Fact]
@@ -53,7 +55,7 @@ public sealed class InMemoryConcurrencyTests
         await FluentActions.Invoking(() => failingHandler.Handle(
                 new ResendVerificationEmailCommand(),
                 CancellationToken.None))
-            .Should().ThrowAsync<HttpRequestException>();
+            .Should().ThrowAsync<ServiceUnavailableException>();
         (await repository.GetByIdAsync(user.Id))!.LastVerificationEmailSentAt.Should().BeNull();
 
         var successfulSender = new TestEmailSender();
@@ -95,13 +97,13 @@ public sealed class InMemoryConcurrencyTests
             string subject,
             string body,
             CancellationToken cancellationToken = default) =>
-            throw new HttpRequestException("Delivery failed.");
+            throw new EmailDeliveryException("Delivery failed.");
 
         public Task SendHtmlAsync(
             string recipientEmail,
             string subject,
             string htmlBody,
             CancellationToken cancellationToken = default) =>
-            throw new HttpRequestException("Delivery failed.");
+            throw new EmailDeliveryException("Delivery failed.");
     }
 }

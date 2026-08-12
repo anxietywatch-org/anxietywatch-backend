@@ -88,11 +88,14 @@ public sealed class MongoCorePersistenceTests : IClassFixture<MongoDbContainerFi
 
         var legacy = await users.GetByIdAsync(id);
         legacy!.Version.Should().Be(0);
+        legacy.SecurityVersion.Should().Be(0);
         legacy.UpdateProfile("Updated Legacy User", null);
         await users.UpdateAsync(legacy);
 
         legacy.Version.Should().Be(1);
         (await users.GetByIdAsync(id))!.FullName.Should().Be("Updated Legacy User");
+        (await users.UpdatePasswordAsync(id, "new-hash")).Should().BeTrue();
+        (await users.GetByIdAsync(id))!.SecurityVersion.Should().Be(1);
     }
 
     [Fact]

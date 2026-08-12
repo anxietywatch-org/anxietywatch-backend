@@ -78,7 +78,11 @@ public sealed class RegisterCommandHandler(
             command.PlanId.ToLowerInvariant());
 
         await users.AddAsync(user, cancellationToken);
-        return CreateResponse(user, jwtTokenService.Create(user.Id, user.Email, user.PlanId));
+        return CreateResponse(user, jwtTokenService.Create(
+            user.Id,
+            user.Email,
+            user.PlanId,
+            user.SecurityVersion));
     }
 
     internal static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
@@ -160,7 +164,11 @@ public sealed class LoginCommandHandler(
             {
                 return RegisterCommandHandler.CreateResponse(
                     authenticatedUser,
-                    jwtTokenService.Create(authenticatedUser.Id, authenticatedUser.Email, authenticatedUser.PlanId));
+                    jwtTokenService.Create(
+                        authenticatedUser.Id,
+                        authenticatedUser.Email,
+                        authenticatedUser.PlanId,
+                        authenticatedUser.SecurityVersion));
             }
 
             user = await users.GetByIdAsync(user.Id, cancellationToken)
@@ -184,7 +192,7 @@ public sealed class GetSessionQueryHandler(
         var user = await RequireUserAsync(currentUser, users, cancellationToken);
         return RegisterCommandHandler.CreateResponse(
             user,
-            jwtTokenService.Create(user.Id, user.Email, user.PlanId));
+            jwtTokenService.Create(user.Id, user.Email, user.PlanId, user.SecurityVersion));
     }
 
     internal static async Task<User> RequireUserAsync(
@@ -232,31 +240,18 @@ public sealed class ForgotPasswordCommandValidator : AbstractValidator<ForgotPas
 }
 
 public sealed class ForgotPasswordCommandHandler(
-    IUserRepository users,
-    IPasswordResetTokenStore resetTokens,
-    IEmailSender emailSender,
-    ISystemClock clock)
+    IPasswordRecoveryEmailQueue emailQueue)
     : IRequestHandler<ForgotPasswordCommand, ForgotPasswordResponse>
 {
     private const string GenericMessage = "If the email exists, a recovery link will be sent.";
 
-    public async Task<ForgotPasswordResponse> Handle(
+    public Task<ForgotPasswordResponse> Handle(
         ForgotPasswordCommand command,
         CancellationToken cancellationToken)
     {
-        var user = await users.GetByEmailAsync(RegisterCommandHandler.NormalizeEmail(command.Email), cancellationToken);
-        if (user is not null)
-        {
-            var rawToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-            await resetTokens.StoreAsync(
-                HashToken(rawToken),
-                user.Id,
-                clock.UtcNow.AddMinutes(30),
-                cancellationToken);
-            await emailSender.SendAsync(user.Email, "AnxietyWatch password recovery", rawToken, cancellationToken);
-        }
+        emailQueue.TryQueue(RegisterCommandHandler.NormalizeEmail(command.Email));
 
-        return new ForgotPasswordResponse(GenericMessage);
+        return Task.FromResult(new ForgotPasswordResponse(GenericMessage));
     }
 
     internal static string HashToken(string token) =>
@@ -331,7 +326,19 @@ public sealed class ChangePasswordCommandHandler(
 
         user.UpdatePassword(passwordHasher.Hash(command.NewPassword));
         await users.UpdateAsync(user, cancellationToken);
-        await emailSender.SendAsync(user.Email, "AnxietyWatch password changed", "Your password was changed.", cancellationToken);
+        try
+        {
+            await emailSender.SendAsync(
+                user.Email,
+                "AnxietyWatch password changed",
+                "Your password was changed.",
+                cancellationToken);
+        }
+        catch (EmailDeliveryException)
+        {
+            // The password update is committed; the notification is best-effort.
+        }
+
         return "Password updated";
     }
 }
@@ -410,14 +417,46 @@ public sealed class ResendVerificationEmailCommandHandler(
                 CreateEmailBody(verificationLink),
                 cancellationToken);
         }
-        catch
+        catch (Exception exception)
         {
-            await users.RollbackEmailVerificationTokenAsync(
-                user.Id,
-                tokenHash,
-                sentAt,
-                previousState,
-                CancellationToken.None);
+            if (exception is OperationCanceledException)
+            {
+                throw;
+            }
+
+            if (exception is not EmailDeliveryException { DeliveryMayHaveSucceeded: true })
+            {
+                try
+                {
+                    using var rollbackTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    await users.RollbackEmailVerificationTokenAsync(
+                        user.Id,
+                        tokenHash,
+                        sentAt,
+                        previousState,
+                        rollbackTimeout.Token);
+                }
+                catch (Exception rollbackException)
+                {
+                    if (exception is EmailDeliveryException)
+                    {
+                        throw new ServiceUnavailableException(
+                            "Email delivery is temporarily unavailable.",
+                            innerException: new AggregateException(exception, rollbackException));
+                    }
+
+                    throw new AggregateException(exception, rollbackException);
+                }
+            }
+
+            if (exception is EmailDeliveryException emailDeliveryException)
+            {
+                throw new ServiceUnavailableException(
+                    "Email delivery is temporarily unavailable.",
+                    emailDeliveryException.DeliveryMayHaveSucceeded ? 60 : 30,
+                    innerException: emailDeliveryException);
+            }
+
             throw;
         }
 

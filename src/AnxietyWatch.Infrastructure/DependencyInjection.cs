@@ -23,6 +23,10 @@ public static class DependencyInjection
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IJwtTokenService, JwtTokenService>();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.ICurrentUser, HttpCurrentUser>();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IEmailVerificationLinkFactory, EmailVerificationLinkFactory>();
+        services.AddSingleton<PasswordRecoveryEmailQueue>();
+        services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordRecoveryEmailQueue>(serviceProvider =>
+            serviceProvider.GetRequiredService<PasswordRecoveryEmailQueue>());
+        services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<PasswordRecoveryEmailQueue>());
         var emailProvider = configuration["Email:Provider"];
         if (environment.IsProduction() &&
             (!string.Equals(emailProvider, "Resend", StringComparison.OrdinalIgnoreCase) ||

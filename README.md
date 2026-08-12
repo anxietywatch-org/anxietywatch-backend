@@ -58,7 +58,7 @@ Los errores devuelven `application/problem+json` con esta forma:
 }
 ```
 
-Códigos usados: `400` validación, `401` credenciales/sesión inválidas, `403` cuota de plan superada o recurso ajeno, `404` no encontrado, `409` conflicto (email duplicado, token usado), `410` token de recuperación expirado, `429` demasiados intentos (incluye `Retry-After` en segundos).
+Códigos usados: `400` validación, `401` credenciales/sesión inválidas, `403` cuota de plan superada o recurso ajeno, `404` no encontrado, `409` conflicto (email duplicado, token usado), `410` token de recuperación expirado, `429` demasiados intentos y `503` proveedor temporalmente no disponible. `429` y `503` incluyen `Retry-After` en segundos.
 
 ### Autenticación
 
@@ -117,7 +117,7 @@ Sin cuerpo. Revoca el JWT actual; responde `{ "success": true }`.
 { "email": "ana@example.com" }
 ```
 
-Respuesta genérica: `{ "message": "..." }` (siempre igual para no revelar emails existentes).
+Respuesta genérica: `{ "message": "..." }` (siempre `200` e igual para no revelar emails existentes). La búsqueda, creación del token y entrega se procesan en segundo plano; un fallo del proveedor se registra internamente sin cambiar la respuesta. El endpoint limita cada IP a 20 solicitudes por minuto, deduplica cada destinatario durante 60 segundos y devuelve `429` al exceder el límite por IP.
 
 #### POST /api/auth/password/reset — 200
 
@@ -133,6 +133,8 @@ Responde `{ "message": "Password updated" }`. `410` si el token expiró (30 min)
 { "currentPassword": "vieja123", "newPassword": "nueva123" }
 ```
 
+El cambio persistido invalida los JWT emitidos anteriormente. La notificación por correo es best-effort y no convierte un cambio exitoso en un error HTTP.
+
 #### GET /api/auth/verify-email/status — 200 (protegido)
 
 ```json
@@ -141,7 +143,7 @@ Responde `{ "message": "Password updated" }`. `410` si el token expiró (30 min)
 
 #### POST /api/auth/verify-email/resend — 200 (protegido)
 
-Sin cuerpo. Genera un token de un solo uso válido por 24 horas y envía un correo HTML con un enlace `Email:VerificationUrl#token=...`. El fragmento evita exponer el token en logs HTTP y cabeceras `Referer`; el frontend debe retirarlo del navegador y enviarlo al endpoint de confirmación. Responde `{ "message": "Verification email sent" }`. Cooldown de 60 s → `429`.
+Sin cuerpo. Genera un token de un solo uso válido por 24 horas y envía un correo HTML con un enlace `Email:VerificationUrl#token=...`. El fragmento evita exponer el token en logs HTTP y cabeceras `Referer`; el frontend debe retirarlo del navegador y enviarlo al endpoint de confirmación. Responde `{ "message": "Verification email sent" }`. Cooldown de 60 s → `429`. Un rechazo definitivo del proveedor revierte token/cooldown; un fallo de entrega devuelve `503` sin exponer detalles de Resend.
 
 #### POST /api/auth/verify-email/confirm — 200 (público)
 

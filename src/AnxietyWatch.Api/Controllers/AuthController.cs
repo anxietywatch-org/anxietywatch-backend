@@ -2,6 +2,7 @@ using AnxietyWatch.Application.Features.Authentication;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AnxietyWatch.Api.Controllers;
 
@@ -40,6 +41,7 @@ public sealed class AuthController(ISender sender) : ControllerBase
     }
 
     [HttpPost("password/forgot")]
+    [EnableRateLimiting("password-recovery")]
     public async Task<ActionResult<ForgotPasswordResponse>> ForgotPassword(
         ForgotPasswordCommand command,
         CancellationToken cancellationToken) =>
