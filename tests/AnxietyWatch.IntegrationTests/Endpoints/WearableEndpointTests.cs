@@ -66,6 +66,18 @@ public sealed class WearableEndpointTests(CustomWebApplicationFactory factory)
 
         (await client.PostAsJsonAsync("/api/v1/sos/trigger", sos)).StatusCode.Should().Be(HttpStatusCode.Accepted);
         (await client.PostAsJsonAsync("/api/v1/sos/trigger", sos)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var cancellation = new
+        {
+            sos.eventId,
+            sos.deviceId,
+            userId = (Guid?)null,
+            cancelledAt = DateTimeOffset.UtcNow,
+            reason = "Cancelled on watch"
+        };
+
+        (await client.PostAsJsonAsync("/api/v1/sos/cancel", cancellation)).StatusCode.Should().Be(HttpStatusCode.Accepted);
+        (await client.PostAsJsonAsync("/api/v1/sos/cancel", cancellation)).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     private sealed record AuthResponse(string Token);
