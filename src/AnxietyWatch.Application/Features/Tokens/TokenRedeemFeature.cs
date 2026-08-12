@@ -70,7 +70,8 @@ public sealed class TokenRedeemCommandHandler(
         var jwt = jwtTokenService.Create(
             accountForSession.Id,
             accountForSession.Email,
-            accountForSession.PlanId);
+            accountForSession.PlanId,
+            accountForSession.SecurityVersion);
         return new TokenRedeemResponse(
             jwt.AccessToken,
             jwt.ExpiresAt,

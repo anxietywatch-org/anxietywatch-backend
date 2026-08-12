@@ -2,6 +2,7 @@ using AnxietyWatch.Application.Features.Authentication;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AnxietyWatch.Api.Controllers;
 
@@ -40,6 +41,7 @@ public sealed class AuthController(ISender sender) : ControllerBase
     }
 
     [HttpPost("password/forgot")]
+    [EnableRateLimiting("password-recovery")]
     public async Task<ActionResult<ForgotPasswordResponse>> ForgotPassword(
         ForgotPasswordCommand command,
         CancellationToken cancellationToken) =>
@@ -69,4 +71,11 @@ public sealed class AuthController(ISender sender) : ControllerBase
     public async Task<ActionResult<object>> ResendVerification(
         CancellationToken cancellationToken) =>
         Ok(new { message = await sender.Send(new ResendVerificationEmailCommand(), cancellationToken) });
+
+    [AllowAnonymous]
+    [HttpPost("verify-email/confirm")]
+    public async Task<ActionResult<object>> ConfirmVerification(
+        ConfirmEmailCommand command,
+        CancellationToken cancellationToken) =>
+        Ok(new { message = await sender.Send(command, cancellationToken) });
 }

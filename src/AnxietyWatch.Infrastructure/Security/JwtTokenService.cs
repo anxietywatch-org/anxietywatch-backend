@@ -9,7 +9,7 @@ namespace AnxietyWatch.Infrastructure.Security;
 
 public sealed class JwtTokenService(IConfiguration configuration) : IJwtTokenService
 {
-    public JwtToken Create(Guid userId, string email, string planId)
+    public JwtToken Create(Guid userId, string email, string planId, long securityVersion)
     {
         var key = configuration["Jwt:SigningKey"]
             ?? throw new InvalidOperationException("Jwt:SigningKey is not configured.");
@@ -27,6 +27,7 @@ public sealed class JwtTokenService(IConfiguration configuration) : IJwtTokenSer
                 new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
                 new Claim(JwtRegisteredClaimNames.Email, email),
                 new Claim("plan", planId),
+                new Claim("security_version", securityVersion.ToString()),
                 new Claim(JwtRegisteredClaimNames.Jti, jwtId)
             ],
             notBefore: now.UtcDateTime,

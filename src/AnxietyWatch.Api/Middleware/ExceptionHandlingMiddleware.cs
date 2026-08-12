@@ -27,15 +27,22 @@ public sealed class ExceptionHandlingMiddleware(
                 UnauthorizedApplicationException => StatusCodes.Status401Unauthorized,
                 TooManyRequestsException => StatusCodes.Status429TooManyRequests,
                 GoneException => StatusCodes.Status410Gone,
+                ServiceUnavailableException => StatusCodes.Status503ServiceUnavailable,
                 _ => (int)HttpStatusCode.InternalServerError
             };
             if (exception is TooManyRequestsException tooManyRequests)
             {
                 context.Response.Headers.RetryAfter = tooManyRequests.RetryAfterSeconds.ToString();
             }
+            else if (exception is ServiceUnavailableException serviceUnavailable)
+            {
+                context.Response.Headers.RetryAfter = serviceUnavailable.RetryAfterSeconds.ToString();
+            }
 
             context.Response.ContentType = "application/problem+json";
-            var title = context.Response.StatusCode >= StatusCodes.Status500InternalServerError
+            var title = exception is ServiceUnavailableException
+                ? "Email delivery is temporarily unavailable."
+                : context.Response.StatusCode >= StatusCodes.Status500InternalServerError
                 ? "An unexpected server error occurred."
                 : exception.Message;
 

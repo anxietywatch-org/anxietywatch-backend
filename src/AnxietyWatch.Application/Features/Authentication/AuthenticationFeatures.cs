@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using AnxietyWatch.Application.Abstractions.Security;
@@ -77,7 +78,11 @@ public sealed class RegisterCommandHandler(
             command.PlanId.ToLowerInvariant());
 
         await users.AddAsync(user, cancellationToken);
-        return CreateResponse(user, jwtTokenService.Create(user.Id, user.Email, user.PlanId));
+        return CreateResponse(user, jwtTokenService.Create(
+            user.Id,
+            user.Email,
+            user.PlanId,
+            user.SecurityVersion));
     }
 
     internal static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
@@ -159,7 +164,11 @@ public sealed class LoginCommandHandler(
             {
                 return RegisterCommandHandler.CreateResponse(
                     authenticatedUser,
-                    jwtTokenService.Create(authenticatedUser.Id, authenticatedUser.Email, authenticatedUser.PlanId));
+                    jwtTokenService.Create(
+                        authenticatedUser.Id,
+                        authenticatedUser.Email,
+                        authenticatedUser.PlanId,
+                        authenticatedUser.SecurityVersion));
             }
 
             user = await users.GetByIdAsync(user.Id, cancellationToken)
@@ -183,7 +192,7 @@ public sealed class GetSessionQueryHandler(
         var user = await RequireUserAsync(currentUser, users, cancellationToken);
         return RegisterCommandHandler.CreateResponse(
             user,
-            jwtTokenService.Create(user.Id, user.Email, user.PlanId));
+            jwtTokenService.Create(user.Id, user.Email, user.PlanId, user.SecurityVersion));
     }
 
     internal static async Task<User> RequireUserAsync(
@@ -231,31 +240,18 @@ public sealed class ForgotPasswordCommandValidator : AbstractValidator<ForgotPas
 }
 
 public sealed class ForgotPasswordCommandHandler(
-    IUserRepository users,
-    IPasswordResetTokenStore resetTokens,
-    IEmailSender emailSender,
-    ISystemClock clock)
+    IPasswordRecoveryEmailQueue emailQueue)
     : IRequestHandler<ForgotPasswordCommand, ForgotPasswordResponse>
 {
     private const string GenericMessage = "If the email exists, a recovery link will be sent.";
 
-    public async Task<ForgotPasswordResponse> Handle(
+    public Task<ForgotPasswordResponse> Handle(
         ForgotPasswordCommand command,
         CancellationToken cancellationToken)
     {
-        var user = await users.GetByEmailAsync(RegisterCommandHandler.NormalizeEmail(command.Email), cancellationToken);
-        if (user is not null)
-        {
-            var rawToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-            await resetTokens.StoreAsync(
-                HashToken(rawToken),
-                user.Id,
-                clock.UtcNow.AddMinutes(30),
-                cancellationToken);
-            await emailSender.SendAsync(user.Email, "AnxietyWatch password recovery", rawToken, cancellationToken);
-        }
+        emailQueue.TryQueue(RegisterCommandHandler.NormalizeEmail(command.Email));
 
-        return new ForgotPasswordResponse(GenericMessage);
+        return Task.FromResult(new ForgotPasswordResponse(GenericMessage));
     }
 
     internal static string HashToken(string token) =>
@@ -330,7 +326,19 @@ public sealed class ChangePasswordCommandHandler(
 
         user.UpdatePassword(passwordHasher.Hash(command.NewPassword));
         await users.UpdateAsync(user, cancellationToken);
-        await emailSender.SendAsync(user.Email, "AnxietyWatch password changed", "Your password was changed.", cancellationToken);
+        try
+        {
+            await emailSender.SendAsync(
+                user.Email,
+                "AnxietyWatch password changed",
+                "Your password was changed.",
+                cancellationToken);
+        }
+        catch (EmailDeliveryException)
+        {
+            // The password update is committed; the notification is best-effort.
+        }
+
         return "Password updated";
     }
 }
@@ -357,15 +365,25 @@ public sealed class ResendVerificationEmailCommandHandler(
     ICurrentUser currentUser,
     IUserRepository users,
     ISystemClock clock,
-    IEmailSender emailSender)
+    IEmailSender emailSender,
+    IEmailVerificationLinkFactory linkFactory)
     : IRequestHandler<ResendVerificationEmailCommand, string>
 {
     public async Task<string> Handle(ResendVerificationEmailCommand request, CancellationToken cancellationToken)
     {
         User user;
+        string rawToken;
+        string tokenHash;
+        DateTimeOffset sentAt;
+        EmailVerificationTokenState previousState;
         while (true)
         {
             user = await GetSessionQueryHandler.RequireUserAsync(currentUser, users, cancellationToken);
+            if (user.EmailVerified)
+            {
+                return "Email is already verified";
+            }
+
             var now = clock.UtcNow;
             if (user.LastVerificationEmailSentAt is not null &&
                 now - user.LastVerificationEmailSentAt < TimeSpan.FromSeconds(60))
@@ -373,19 +391,127 @@ public sealed class ResendVerificationEmailCommandHandler(
                 throw new TooManyRequestsException("Verification email cooldown is active.", 60);
             }
 
-            user.MarkVerificationEmailSent(now);
-            try
+            rawToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+            tokenHash = ForgotPasswordCommandHandler.HashToken(rawToken);
+            sentAt = now;
+            var storedState = await users.StoreEmailVerificationTokenAsync(
+                user.Id,
+                sentAt,
+                tokenHash,
+                now.AddHours(24),
+                user.Version,
+                cancellationToken);
+            if (storedState is not null)
             {
-                await users.UpdateAsync(user, cancellationToken);
+                previousState = storedState;
                 break;
-            }
-            catch (ConflictException)
-            {
-                // Re-read so a concurrent resend produces the documented cooldown response.
             }
         }
 
-        await emailSender.SendAsync(user.Email, "Verify your AnxietyWatch email", "Verification link", cancellationToken);
+        try
+        {
+            var verificationLink = linkFactory.Create(rawToken);
+            await emailSender.SendHtmlAsync(
+                user.Email,
+                "Verify your AnxietyWatch email",
+                CreateEmailBody(verificationLink),
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            if (exception is OperationCanceledException)
+            {
+                throw;
+            }
+
+            if (exception is not EmailDeliveryException { DeliveryMayHaveSucceeded: true })
+            {
+                try
+                {
+                    using var rollbackTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    await users.RollbackEmailVerificationTokenAsync(
+                        user.Id,
+                        tokenHash,
+                        sentAt,
+                        previousState,
+                        rollbackTimeout.Token);
+                }
+                catch (Exception rollbackException)
+                {
+                    if (exception is EmailDeliveryException)
+                    {
+                        throw new ServiceUnavailableException(
+                            "Email delivery is temporarily unavailable.",
+                            innerException: new AggregateException(exception, rollbackException));
+                    }
+
+                    throw new AggregateException(exception, rollbackException);
+                }
+            }
+
+            if (exception is EmailDeliveryException emailDeliveryException)
+            {
+                throw new ServiceUnavailableException(
+                    "Email delivery is temporarily unavailable.",
+                    emailDeliveryException.DeliveryMayHaveSucceeded ? 60 : 30,
+                    innerException: emailDeliveryException);
+            }
+
+            throw;
+        }
+
         return "Verification email sent";
+    }
+
+    internal static string CreateEmailBody(string verificationLink)
+    {
+        var encodedLink = WebUtility.HtmlEncode(verificationLink);
+        return $$"""
+            <!doctype html>
+            <html lang="en">
+            <body style="margin:0;background:#f4f7f5;font-family:Arial,sans-serif;color:#17352d">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:32px 16px;background:#f4f7f5">
+                <tr><td align="center">
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;padding:40px;box-shadow:0 8px 30px rgba(23,53,45,.08)">
+                    <tr><td>
+                      <p style="margin:0 0 12px;color:#26735f;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">AnxietyWatch</p>
+                      <h1 style="margin:0 0 16px;font-size:28px;line-height:1.2">Verify your email</h1>
+                      <p style="margin:0 0 28px;color:#4d625c;font-size:16px;line-height:1.6">Confirm this email address to finish securing your AnxietyWatch account. This link expires in 24 hours.</p>
+                      <a href="{{encodedLink}}" style="display:inline-block;padding:14px 24px;border-radius:10px;background:#26735f;color:#ffffff;text-decoration:none;font-weight:700">Verify email</a>
+                      <p style="margin:28px 0 8px;color:#6b7d78;font-size:13px;line-height:1.5">If the button does not work, open this link:</p>
+                      <p style="margin:0;word-break:break-all;font-size:13px"><a href="{{encodedLink}}" style="color:#26735f">{{encodedLink}}</a></p>
+                      <p style="margin:28px 0 0;color:#6b7d78;font-size:13px;line-height:1.5">If you did not request this email, you can safely ignore it.</p>
+                    </td></tr>
+                  </table>
+                </td></tr>
+              </table>
+            </body>
+            </html>
+            """;
+    }
+}
+
+public sealed record ConfirmEmailCommand(string Token) : IRequest<string>;
+
+public sealed class ConfirmEmailCommandValidator : AbstractValidator<ConfirmEmailCommand>
+{
+    public ConfirmEmailCommandValidator() => RuleFor(command => command.Token).NotEmpty().MaximumLength(256);
+}
+
+public sealed class ConfirmEmailCommandHandler(IUserRepository users, ISystemClock clock)
+    : IRequestHandler<ConfirmEmailCommand, string>
+{
+    public async Task<string> Handle(ConfirmEmailCommand command, CancellationToken cancellationToken)
+    {
+        var confirmed = await users.ConfirmEmailAsync(
+            ForgotPasswordCommandHandler.HashToken(command.Token),
+            clock.UtcNow,
+            cancellationToken);
+        if (!confirmed)
+        {
+            throw new GoneException("The verification link is expired or has already been used.");
+        }
+
+        return "Email verified";
     }
 }

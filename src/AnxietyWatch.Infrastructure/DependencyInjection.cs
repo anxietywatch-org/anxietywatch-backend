@@ -6,6 +6,7 @@ using AnxietyWatch.Infrastructure.Persistence.Mongo;
 using AnxietyWatch.Infrastructure.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace AnxietyWatch.Infrastructure;
 
@@ -13,14 +14,29 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IHostEnvironment environment)
     {
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Caching.ICacheService, NoOpCacheService>();
         services.AddHttpContextAccessor();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordHasher, BcryptPasswordHasher>();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IJwtTokenService, JwtTokenService>();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.ICurrentUser, HttpCurrentUser>();
-        if (string.Equals(configuration["Email:Provider"], "Resend", StringComparison.OrdinalIgnoreCase))
+        services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IEmailVerificationLinkFactory, EmailVerificationLinkFactory>();
+        services.AddSingleton<PasswordRecoveryEmailQueue>();
+        services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordRecoveryEmailQueue>(serviceProvider =>
+            serviceProvider.GetRequiredService<PasswordRecoveryEmailQueue>());
+        services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<PasswordRecoveryEmailQueue>());
+        var emailProvider = configuration["Email:Provider"];
+        if (environment.IsProduction() &&
+            (!string.Equals(emailProvider, "Resend", StringComparison.OrdinalIgnoreCase) ||
+             string.IsNullOrWhiteSpace(configuration["Email:Resend:ApiKey"]) ||
+             string.IsNullOrWhiteSpace(configuration["Email:From"])))
+        {
+            throw new InvalidOperationException("Resend email delivery must be fully configured in Production.");
+        }
+
+        if (string.Equals(emailProvider, "Resend", StringComparison.OrdinalIgnoreCase))
         {
             services.AddHttpClient<AnxietyWatch.Application.Abstractions.Security.IEmailSender, ResendEmailSender>(client =>
             {

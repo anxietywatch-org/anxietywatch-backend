@@ -32,7 +32,8 @@ public sealed class User : AggregateRoot
         int failedLoginAttempts,
         DateTimeOffset? firstFailedLoginAt,
         DateTimeOffset? lockoutUntil,
-        long version)
+        long version,
+        long securityVersion)
     {
         var user = new User(id, fullName, email, passwordHash, planId)
         {
@@ -45,7 +46,8 @@ public sealed class User : AggregateRoot
             FailedLoginAttempts = failedLoginAttempts,
             FirstFailedLoginAt = firstFailedLoginAt,
             LockoutUntil = lockoutUntil,
-            Version = version
+            Version = version,
+            SecurityVersion = securityVersion
         };
 
         return user;
@@ -65,6 +67,7 @@ public sealed class User : AggregateRoot
     public DateTimeOffset? FirstFailedLoginAt { get; private set; }
     public DateTimeOffset? LockoutUntil { get; private set; }
     public long Version { get; private set; }
+    public long SecurityVersion { get; private set; }
 
     public void RegisterFailedLogin(DateTimeOffset now)
     {
@@ -96,7 +99,15 @@ public sealed class User : AggregateRoot
 
     public void MarkVerificationEmailSent(DateTimeOffset now) => LastVerificationEmailSentAt = now;
 
-    public void UpdatePassword(string passwordHash) => PasswordHash = passwordHash;
+    public void RestoreVerificationEmailSentAt(DateTimeOffset? sentAt) => LastVerificationEmailSentAt = sentAt;
+
+    public void VerifyEmail() => EmailVerified = true;
+
+    public void UpdatePassword(string passwordHash)
+    {
+        PasswordHash = passwordHash;
+        SecurityVersion++;
+    }
 
     public void UpdateProfile(string fullName, string? avatarUrl)
     {

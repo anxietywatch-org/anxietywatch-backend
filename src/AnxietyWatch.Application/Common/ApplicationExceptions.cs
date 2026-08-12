@@ -10,3 +10,19 @@ public sealed class TooManyRequestsException(string message, int retryAfterSecon
 }
 
 public sealed class GoneException(string message) : Exception(message);
+
+public sealed class EmailDeliveryException(
+    string message,
+    bool deliveryMayHaveSucceeded = false,
+    Exception? innerException = null) : Exception(message, innerException)
+{
+    public bool DeliveryMayHaveSucceeded { get; } = deliveryMayHaveSucceeded;
+}
+
+public sealed class ServiceUnavailableException(
+    string message,
+    int retryAfterSeconds = 30,
+    Exception? innerException = null) : Exception(message, innerException)
+{
+    public int RetryAfterSeconds { get; } = retryAfterSeconds;
+}
