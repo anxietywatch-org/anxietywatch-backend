@@ -36,12 +36,20 @@ public sealed record SosTriggerRequest(
     string Source,
     string? Reason);
 
+public sealed record SosCancelRequest(
+    Guid EventId,
+    Guid DeviceId,
+    Guid? UserId,
+    DateTimeOffset CancelledAt,
+    string? Reason);
+
 public sealed record SubmissionResponse(Guid Id, bool Accepted, bool Duplicate);
 
 public interface IWearableSyncRepository
 {
     Task<bool> TryStoreTelemetryAsync(Guid userId, TelemetryBatchRequest batch, CancellationToken cancellationToken = default);
     Task<bool> TryStoreSosAsync(Guid userId, SosTriggerRequest trigger, CancellationToken cancellationToken = default);
+    Task<bool> TryStoreSosCancellationAsync(Guid userId, SosCancelRequest cancellation, CancellationToken cancellationToken = default);
 }
 
 public sealed record SubmitTelemetryBatchCommand(TelemetryBatchRequest Batch) : IRequest<SubmissionResponse>;
@@ -134,5 +142,36 @@ public sealed class TriggerSosCommandHandler(
         var userId = SubmitTelemetryBatchCommandHandler.RequireMatchingUser(currentUser, command.Trigger.UserId);
         var accepted = await repository.TryStoreSosAsync(userId, command.Trigger, cancellationToken);
         return new SubmissionResponse(command.Trigger.EventId, accepted, !accepted);
+    }
+}
+
+public sealed record CancelSosCommand(SosCancelRequest Cancellation) : IRequest<SubmissionResponse>;
+
+public sealed class CancelSosCommandValidator : AbstractValidator<CancelSosCommand>
+{
+    public CancelSosCommandValidator()
+    {
+        RuleFor(command => command.Cancellation.EventId).NotEmpty();
+        RuleFor(command => command.Cancellation.DeviceId).NotEmpty();
+        RuleFor(command => command.Cancellation.CancelledAt).NotEmpty();
+        RuleFor(command => command.Cancellation.Reason).MaximumLength(500);
+    }
+}
+
+public sealed class CancelSosCommandHandler(
+    ICurrentUser currentUser,
+    IWearableSyncRepository repository)
+    : IRequestHandler<CancelSosCommand, SubmissionResponse>
+{
+    public async Task<SubmissionResponse> Handle(CancelSosCommand command, CancellationToken cancellationToken)
+    {
+        var userId = SubmitTelemetryBatchCommandHandler.RequireMatchingUser(
+            currentUser,
+            command.Cancellation.UserId);
+        var accepted = await repository.TryStoreSosCancellationAsync(
+            userId,
+            command.Cancellation,
+            cancellationToken);
+        return new SubmissionResponse(command.Cancellation.EventId, accepted, !accepted);
     }
 }

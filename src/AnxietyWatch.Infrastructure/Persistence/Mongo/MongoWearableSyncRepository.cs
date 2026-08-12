@@ -9,12 +9,16 @@ public sealed class MongoWearableSyncRepository(MongoContext context) : IWearabl
 {
     private readonly IMongoCollection<BsonDocument> telemetry = context.Database.GetCollection<BsonDocument>("telemetry_batches");
     private readonly IMongoCollection<BsonDocument> sosEvents = context.Database.GetCollection<BsonDocument>("sos_events");
+    private readonly IMongoCollection<BsonDocument> sosCancellations = context.Database.GetCollection<BsonDocument>("sos_cancellations");
 
     public Task<bool> TryStoreTelemetryAsync(Guid userId, TelemetryBatchRequest batch, CancellationToken cancellationToken = default) =>
         TryInsertAsync(telemetry, batch.BatchId, userId, batch, cancellationToken);
 
     public Task<bool> TryStoreSosAsync(Guid userId, SosTriggerRequest trigger, CancellationToken cancellationToken = default) =>
         TryInsertAsync(sosEvents, trigger.EventId, userId, trigger, cancellationToken);
+
+    public Task<bool> TryStoreSosCancellationAsync(Guid userId, SosCancelRequest cancellation, CancellationToken cancellationToken = default) =>
+        TryInsertAsync(sosCancellations, cancellation.EventId, userId, cancellation, cancellationToken);
 
     private static async Task<bool> TryInsertAsync<T>(
         IMongoCollection<BsonDocument> collection,

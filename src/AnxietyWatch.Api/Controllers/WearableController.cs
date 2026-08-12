@@ -29,4 +29,14 @@ public sealed class WearableController(ISender sender) : ControllerBase
         return StatusCode(result.Accepted ? StatusCodes.Status202Accepted : StatusCodes.Status200OK,
             new { eventId = result.Id, result.Accepted, result.Duplicate });
     }
+
+    [HttpPost("sos/cancel")]
+    public async Task<ActionResult<object>> CancelSos(
+        SosCancelRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(new CancelSosCommand(request), cancellationToken);
+        return StatusCode(result.Accepted ? StatusCodes.Status202Accepted : StatusCodes.Status200OK,
+            new { eventId = result.Id, result.Accepted, result.Duplicate });
+    }
 }
