@@ -1,4 +1,5 @@
 using AnxietyWatch.Application.Common;
+using AnxietyWatch.Application.Features.Wearables;
 using AnxietyWatch.Domain.Tokens;
 using AnxietyWatch.Domain.Users;
 using AnxietyWatch.Infrastructure.Persistence.Mongo;
@@ -16,6 +17,7 @@ public sealed class MongoCorePersistenceTests : IClassFixture<MongoDbContainerFi
     private readonly MongoUserRepository users;
     private readonly MongoLinkTokenRepository tokens;
     private readonly MongoRevokedTokenStore revokedTokens;
+    private readonly MongoWearableSyncRepository wearableSync;
 
     public MongoCorePersistenceTests(MongoDbContainerFixture fixture)
     {
@@ -30,6 +32,7 @@ public sealed class MongoCorePersistenceTests : IClassFixture<MongoDbContainerFi
         users = new MongoUserRepository(context);
         tokens = new MongoLinkTokenRepository(context);
         revokedTokens = new MongoRevokedTokenStore(context);
+        wearableSync = new MongoWearableSyncRepository(context);
     }
 
     public Task InitializeAsync() => Task.CompletedTask;
@@ -225,6 +228,48 @@ public sealed class MongoCorePersistenceTests : IClassFixture<MongoDbContainerFi
             .SingleAsync();
         new DateTimeOffset(document["expiresAt"].ToUniversalTime())
             .Should().BeCloseTo(longExpiration, TimeSpan.FromMilliseconds(1));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task WearableSyncRepository_ShouldPersistImmutableCancellationRegardlessOfTriggerOrder(
+        bool cancellationFirst)
+    {
+        var userId = Guid.NewGuid();
+        var eventId = Guid.NewGuid();
+        var trigger = new SosTriggerRequest(
+            eventId, Guid.NewGuid(), userId, DateTimeOffset.UtcNow, "WATCH", "Alert");
+        var cancellation = new SosCancelRequest(
+            eventId, trigger.DeviceId, userId, DateTimeOffset.UtcNow.AddSeconds(1), "False alarm");
+
+        if (cancellationFirst)
+        {
+            (await wearableSync.TryStoreSosCancellationAsync(userId, cancellation)).Should().BeTrue();
+            (await wearableSync.TryStoreSosAsync(userId, trigger)).Should().BeTrue();
+        }
+        else
+        {
+            (await wearableSync.TryStoreSosAsync(userId, trigger)).Should().BeTrue();
+            (await wearableSync.TryStoreSosCancellationAsync(userId, cancellation)).Should().BeTrue();
+        }
+
+        var changedCancellation = cancellation with { Reason = "Changed reason" };
+        (await wearableSync.TryStoreSosCancellationAsync(userId, changedCancellation)).Should().BeFalse();
+        var otherUserId = Guid.NewGuid();
+        var otherCancellation = cancellation with
+        {
+            EventId = Guid.NewGuid(),
+            DeviceId = Guid.NewGuid()
+        };
+        (await wearableSync.TryStoreSosCancellationAsync(otherUserId, otherCancellation)).Should().BeTrue();
+
+        var documents = await context.Database.GetCollection<BsonDocument>("sos_cancellations")
+            .Find(Filter.Empty)
+            .ToListAsync();
+        documents.Should().HaveCount(2);
+        var document = documents.Single(item => item["userId"].AsString == userId.ToString());
+        document["_id"].AsString.Should().Be(eventId.ToString());
     }
 
     private static LinkToken NewLinkToken(Guid userId, string code) =>

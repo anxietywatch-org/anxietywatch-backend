@@ -80,5 +80,68 @@ public sealed class WearableEndpointTests(CustomWebApplicationFactory factory)
         (await client.PostAsJsonAsync("/api/v1/sos/cancel", cancellation)).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [Fact]
+    public async Task SosCancel_ShouldRequireAuthenticationValidateOwnershipAndBeIdempotent()
+    {
+        using var client = factory.CreateClient();
+        var eventId = Guid.NewGuid();
+        var cancellation = new
+        {
+            eventId,
+            deviceId = Guid.NewGuid(),
+            userId = (Guid?)null,
+            cancelledAt = DateTimeOffset.UtcNow,
+            reason = "False alarm"
+        };
+
+        (await client.PostAsJsonAsync("/api/v1/sos/cancel", cancellation)).StatusCode
+            .Should().Be(HttpStatusCode.Unauthorized);
+
+        var auth = await RegisterAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth.Token);
+
+        var first = await client.PostAsJsonAsync("/api/v1/sos/cancel", cancellation);
+        first.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        (await first.Content.ReadFromJsonAsync<SubmissionResponse>()).Should().Be(
+            new SubmissionResponse(eventId, true, false));
+
+        var duplicate = await client.PostAsJsonAsync("/api/v1/sos/cancel", cancellation);
+        duplicate.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await duplicate.Content.ReadFromJsonAsync<SubmissionResponse>()).Should().Be(
+            new SubmissionResponse(eventId, false, true));
+
+        (await client.PostAsJsonAsync("/api/v1/sos/cancel", new
+        {
+            eventId = Guid.Empty,
+            deviceId = Guid.Empty,
+            cancelledAt = default(DateTimeOffset),
+            reason = new string('x', 501)
+        })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        (await client.PostAsJsonAsync("/api/v1/sos/cancel", new
+        {
+            eventId = Guid.NewGuid(),
+            deviceId = Guid.NewGuid(),
+            userId = Guid.NewGuid(),
+            cancelledAt = DateTimeOffset.UtcNow
+        })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    private static async Task<AuthResponse> RegisterAsync(HttpClient client)
+    {
+        var registration = await client.PostAsJsonAsync("/api/auth/register", new
+        {
+            fullName = "Wearable User",
+            email = $"{Guid.NewGuid():N}@example.test",
+            password = "Password1",
+            planId = "free",
+            billingCycle = "monthly",
+            paymentMethodToken = (string?)null
+        });
+
+        return (await registration.Content.ReadFromJsonAsync<AuthResponse>())!;
+    }
+
     private sealed record AuthResponse(string Token);
+    private sealed record SubmissionResponse(Guid EventId, bool Accepted, bool Duplicate);
 }
