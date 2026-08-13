@@ -34,7 +34,9 @@ Public API:
 https://api.mangoon.xyz
 ```
 
-The Droplet should keep port `8080` bound to localhost only. Public traffic must go through the HTTPS reverse proxy.
+The Droplet keeps port `8080` bound to localhost only. Public traffic goes through the Caddy service declared in
+`docker-compose.prod.yml`. Caddy stores certificates in named Docker volumes and uses `restart: unless-stopped`, so
+both the API and HTTPS proxy recover automatically after a Droplet reboot or a normal redeployment.
 
 Required runtime environment:
 
