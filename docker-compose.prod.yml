@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   api:
     image: ghcr.io/anxietywatch-org/anxietywatch-backend:develop
@@ -37,7 +35,35 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  reverse-proxy:
+    image: caddy:2.10.2-alpine
+    container_name: anxietywatch-caddy-prod
+    command:
+      - caddy
+      - reverse-proxy
+      - --from
+      - api.mangoon.xyz
+      - --to
+      - api:8080
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - anxietywatch_network
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
 networks:
   anxietywatch_network:
     driver: bridge
     external: false
+
+volumes:
+  caddy_data:
+  caddy_config:
