@@ -1,5 +1,6 @@
 using AnxietyWatch.Domain.Plans;
 using AnxietyWatch.Domain.Users;
+using AnxietyWatch.Application.Features.Support;
 using AnxietyWatch.Infrastructure.Caching;
 using AnxietyWatch.Infrastructure.Persistence;
 using AnxietyWatch.Infrastructure.Persistence.Mongo;
@@ -55,6 +56,7 @@ public static class DependencyInjection
             services.AddSingleton<MongoContext>();
             services.AddSingleton<IPlanRepository, MongoPlanRepository>();
             services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IWearableSyncRepository, MongoWearableSyncRepository>();
+            services.AddSingleton<ISupportTicketRepository, MongoSupportTicketRepository>();
             services.AddSingleton<IUserRepository, MongoUserRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, MongoEpisodeRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, MongoLinkTokenRepository>();
@@ -65,6 +67,7 @@ public static class DependencyInjection
         {
             services.AddSingleton<IPlanRepository, InMemoryPlanRepository>();
             services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IWearableSyncRepository, InMemoryWearableSyncRepository>();
+            services.AddSingleton<ISupportTicketRepository, InMemorySupportTicketRepository>();
             services.AddSingleton<IUserRepository, InMemoryUserRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, InMemoryEpisodeRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, InMemoryLinkTokenRepository>();
