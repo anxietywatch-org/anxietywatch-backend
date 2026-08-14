@@ -11,6 +11,23 @@ public sealed class AuthenticationEndpointTests(CustomWebApplicationFactory fact
     : IClassFixture<CustomWebApplicationFactory>
 {
     [Fact]
+    public async Task Register_ShouldRejectPaidPlanWithoutCheckout()
+    {
+        using var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync("/api/auth/register", new
+        {
+            fullName = "Paid Plan Bypass",
+            email = $"{Guid.NewGuid():N}@example.test",
+            password = "Password1",
+            planId = "professional",
+            billingCycle = "monthly",
+            paymentMethodToken = (string?)null
+        });
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task RegisterThenSession_ShouldReturnTheAuthenticatedUser()
     {
         using var client = factory.CreateClient();

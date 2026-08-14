@@ -41,6 +41,7 @@ public sealed class MongoContext
         Database.GetCollection<BsonDocument>("link_tokens").Indexes.CreateOne(tokenQuotaIndex);
         CreateIndex("revoked_tokens", Builders<BsonDocument>.IndexKeys.Ascending("expiresAt"), expiresAfter: TimeSpan.Zero);
         CreateIndex("password_reset_tokens", Builders<BsonDocument>.IndexKeys.Ascending("expiresAt"), expiresAfter: TimeSpan.Zero);
+        CreateIndex("support_tickets", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("createdAt"));
     }
 
     private void CreateIndex(

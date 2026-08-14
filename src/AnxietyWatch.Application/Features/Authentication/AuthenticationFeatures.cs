@@ -42,8 +42,8 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
             .MinimumLength(8)
             .MaximumLength(30);
         RuleFor(command => command.PlanId)
-            .Must(value => new[] { "free", "individual", "family", "professional" }
-                .Contains(value, StringComparer.OrdinalIgnoreCase));
+            .Equal("free", StringComparer.OrdinalIgnoreCase)
+            .WithMessage("Paid plans require a completed checkout.");
         RuleFor(command => command.BillingCycle)
             .Must(value => new[] { "monthly", "yearly" }
                 .Contains(value, StringComparer.OrdinalIgnoreCase));
@@ -75,7 +75,7 @@ public sealed class RegisterCommandHandler(
             command.FullName.Trim(),
             email,
             passwordHasher.Hash(command.Password),
-            command.PlanId.ToLowerInvariant());
+            "free");
 
         await users.AddAsync(user, cancellationToken);
         return CreateResponse(user, jwtTokenService.Create(
