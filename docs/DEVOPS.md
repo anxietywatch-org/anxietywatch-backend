@@ -15,7 +15,7 @@ Jobs:
 - `build-and-test`: restores, builds, tests, and checks vulnerable packages.
 - `build-docker-image`: publishes the API image to GitHub Container Registry.
 - `build-docker-image-do`: optional DigitalOcean Container Registry push. It only runs when repository variable `PUSH_DOCR` is set to `true`.
-- `deploy-droplet`: deploys `develop` to the DigitalOcean Droplet through the restricted SSH command.
+- `deploy-droplet`: streams the tested `develop` image and validated Compose file to the DigitalOcean Droplet through a restricted SSH command. The Droplet does not store a GitHub token.
 
 Required secrets:
 
@@ -37,6 +37,8 @@ https://api.mangoon.xyz
 The Droplet keeps port `8080` bound to localhost only. Public traffic goes through the Caddy service declared in
 `docker-compose.prod.yml`. Caddy stores certificates in named Docker volumes and uses `restart: unless-stopped`, so
 both the API and HTTPS proxy recover automatically after a Droplet reboot or a normal redeployment.
+
+The production deployment key is restricted in `root/.ssh/authorized_keys` to `ops/anxietywatch-deploy`. It cannot open an interactive shell or forward ports. The deploy script accepts only `upload-compose`, `load-image`, and `deploy`, keeps one rollback image, and restores the previous Compose file if container health checks fail.
 
 Required runtime environment:
 

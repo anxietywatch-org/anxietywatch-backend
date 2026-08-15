@@ -135,7 +135,10 @@ jobs:
     environment: production
     permissions:
       contents: read
+      packages: read
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Load restricted deployment key
         uses: webfactory/ssh-agent@v0.9.1
         with:
@@ -144,10 +147,22 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' '157.230.48.215 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII7xneNufO7X5ZGTHXa7FvmWoOpIaiDesHFq7RTOzktR' > ~/.ssh/known_hosts
+          printf '%s\n' '161.35.110.44 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBm2W3vdm3/4lDjlpSlp4Rx9X7ost9gTQDqDaIKl+CIg' > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pull the image built by this workflow
+        run: docker pull "${REGISTRY}/${IMAGE_NAME}:develop"
+      - name: Upload the validated production Compose file
+        run: ssh root@161.35.110.44 upload-compose < docker-compose.prod.yml
+      - name: Stream the image to the Droplet
+        run: docker save "${REGISTRY}/${IMAGE_NAME}:develop" | ssh root@161.35.110.44 load-image
       - name: Run the restricted deployment command
-        run: ssh root@157.230.48.215
+        run: ssh root@161.35.110.44 deploy
       - name: Verify the public HTTPS deployment
         run: |
           for attempt in {1..12}; do
