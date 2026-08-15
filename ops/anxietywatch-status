@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /opt/anxietywatch-backend
+docker compose -f docker-compose.prod.yml ps
+curl --fail --silent --show-error http://127.0.0.1:8080/health
+printf '\n'
+free -h
+df -h / /opt
