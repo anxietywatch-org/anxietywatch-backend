@@ -115,6 +115,8 @@ public sealed class User : AggregateRoot
         AvatarUrl = avatarUrl;
     }
 
+    public void ChangePlan(string planId) => PlanId = planId;
+
     public void UpdateSettings(int anxietyThreshold, bool pushNotifications, bool privateMode)
     {
         AnxietyThreshold = anxietyThreshold;

@@ -64,6 +64,17 @@ public sealed class InMemoryUserRepository : IUserRepository
         }
     }
 
+    public Task<bool> UpdatePlanAsync(Guid id, string planId, CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            if (!users.TryGetValue(id, out var user)) return Task.FromResult(false);
+            user.ChangePlan(planId);
+            user.MarkPersisted();
+            return Task.FromResult(true);
+        }
+    }
+
     public Task<bool> UpdatePasswordAsync(
         Guid id,
         string passwordHash,

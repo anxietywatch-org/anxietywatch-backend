@@ -33,6 +33,11 @@ public sealed class TokensController(ISender sender) : ControllerBase
         Ok(await sender.Send(new GetTokensQuery(), cancellationToken));
 
     [Authorize]
+    [HttpGet("quota")]
+    public async Task<ActionResult<TokenQuotaResponse>> Quota(CancellationToken cancellationToken) =>
+        Ok(await sender.Send(new GetTokenQuotaQuery(), cancellationToken));
+
+    [Authorize]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
