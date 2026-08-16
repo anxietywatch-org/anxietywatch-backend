@@ -15,6 +15,7 @@ services:
       Email__Resend__ApiKey: ${RESEND_API_KEY:-}
       Email__From: ${EMAIL_FROM:-AnxietyWatch <no-reply@mail.mangoon.xyz>}
       Email__VerificationUrl: ${EMAIL_VERIFICATION_URL:-https://mangoon.xyz/verify-email}
+      Email__PasswordResetUrl: ${EMAIL_PASSWORD_RESET_URL:-https://mangoon.xyz/reset-password}
     ports:
       - "127.0.0.1:8080:8080"
     networks:

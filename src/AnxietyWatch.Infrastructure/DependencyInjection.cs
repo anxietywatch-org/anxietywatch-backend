@@ -24,6 +24,7 @@ public static class DependencyInjection
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IJwtTokenService, JwtTokenService>();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.ICurrentUser, HttpCurrentUser>();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IEmailVerificationLinkFactory, EmailVerificationLinkFactory>();
+        services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordResetLinkFactory, PasswordResetLinkFactory>();
         services.AddSingleton<PasswordRecoveryEmailQueue>();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordRecoveryEmailQueue>(serviceProvider =>
             serviceProvider.GetRequiredService<PasswordRecoveryEmailQueue>());

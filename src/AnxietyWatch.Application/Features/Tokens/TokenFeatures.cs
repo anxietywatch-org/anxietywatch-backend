@@ -195,10 +195,10 @@ public sealed class ShareTokenCommandHandler(
             throw new ForbiddenException("The token does not belong to the authenticated user.");
         }
 
-        await emailSender.SendAsync(
+        await emailSender.SendHtmlAsync(
             command.RecipientEmail,
             "AnxietyWatch token invitation",
-            $"Use the token {token.Code} to link your account.",
+            AnxietyWatchEmailTemplates.TokenInvitation(token.Code),
             cancellationToken);
         return true;
     }

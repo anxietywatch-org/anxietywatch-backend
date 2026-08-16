@@ -122,10 +122,11 @@ public sealed class PasswordRecoveryEmailQueue(
             clock.UtcNow.AddMinutes(30),
             cancellationToken);
         var emailSender = scope.ServiceProvider.GetRequiredService<IEmailSender>();
-        await emailSender.SendAsync(
+        var linkFactory = scope.ServiceProvider.GetRequiredService<IPasswordResetLinkFactory>();
+        await emailSender.SendHtmlAsync(
             user.Email,
             "AnxietyWatch password recovery",
-            rawToken,
+            AnxietyWatchEmailTemplates.PasswordRecovery(linkFactory.Create(rawToken), user.FullName),
             cancellationToken);
     }
 }
