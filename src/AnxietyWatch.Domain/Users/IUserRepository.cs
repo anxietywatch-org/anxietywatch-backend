@@ -11,6 +11,7 @@ public interface IUserRepository
     Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default);
     Task AddAsync(User user, CancellationToken cancellationToken = default);
     Task UpdateAsync(User user, CancellationToken cancellationToken = default);
+    Task<bool> UpdatePlanAsync(Guid id, string planId, CancellationToken cancellationToken = default);
     Task<bool> UpdatePasswordAsync(Guid id, string passwordHash, CancellationToken cancellationToken = default);
     Task<User?> RegisterFailedLoginAsync(
         Guid id,

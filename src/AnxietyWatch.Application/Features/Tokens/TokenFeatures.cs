@@ -15,6 +15,8 @@ public sealed record TokenResponse(
     DateTimeOffset ExpiresAt,
     string Status);
 
+public sealed record TokenQuotaResponse(int Limit, int Used, int Remaining);
+
 public sealed record CreateTokenCommand(string Role) : IRequest<TokenResponse>;
 
 public sealed class CreateTokenCommandValidator : AbstractValidator<CreateTokenCommand>
@@ -50,7 +52,7 @@ public sealed class CreateTokenCommandHandler(
             command.Role.ToLowerInvariant(), clock.UtcNow.AddDays(30));
         if (!await tokens.TryAddAsync(token, maximum, cancellationToken))
         {
-            throw new ForbiddenException("The token quota for the current plan has been reached.");
+            throw new ConflictException("The token quota for the current plan has been reached.");
         }
 
         return Map(token);
@@ -82,6 +84,27 @@ public sealed class CreateTokenCommandHandler(
 }
 
 public sealed record GetTokensQuery : IRequest<IReadOnlyList<TokenResponse>>;
+
+public sealed record GetTokenQuotaQuery : IRequest<TokenQuotaResponse>;
+
+public sealed class GetTokenQuotaQueryHandler(ICurrentUser currentUser, ILinkTokenRepository tokens)
+    : IRequestHandler<GetTokenQuotaQuery, TokenQuotaResponse>
+{
+    public async Task<TokenQuotaResponse> Handle(GetTokenQuotaQuery request, CancellationToken cancellationToken)
+    {
+        CreateTokenCommandHandler.RequireAuthenticatedUser(currentUser);
+        var limit = currentUser.PlanId?.ToLowerInvariant() switch
+        {
+            "free" or "individual" => 1,
+            "family" => 5,
+            "professional" => 20,
+            _ => 0
+        };
+        var used = (await tokens.GetAsync(currentUser.UserId, cancellationToken))
+            .Count(token => token.Status is not TokenStatus.Deleted);
+        return new TokenQuotaResponse(limit, used, Math.Max(0, limit - used));
+    }
+}
 
 public sealed class GetTokensQueryHandler(ICurrentUser currentUser, ILinkTokenRepository tokens)
     : IRequestHandler<GetTokensQuery, IReadOnlyList<TokenResponse>>

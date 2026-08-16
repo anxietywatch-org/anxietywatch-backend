@@ -67,6 +67,15 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
         user.MarkPersisted();
     }
 
+    public async Task<bool> UpdatePlanAsync(Guid id, string planId, CancellationToken cancellationToken = default)
+    {
+        var result = await Collection.UpdateOneAsync(
+            Builders<BsonDocument>.Filter.Eq("_id", id.ToString()),
+            Builders<BsonDocument>.Update.Set("planId", planId).Inc("version", 1),
+            cancellationToken: cancellationToken);
+        return result.MatchedCount == 1;
+    }
+
     public async Task<bool> UpdatePasswordAsync(
         Guid id,
         string passwordHash,
