@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   api:
     image: ghcr.io/anxietywatch-org/anxietywatch-backend:develop
@@ -7,11 +5,19 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_HTTP_PORTS: 8080
-      # Set Persistence__Provider=InMemory temporarily while MongoDB Atlas is repaired.
-      Persistence__Provider: ${Persistence__Provider:-Mongo}
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      Cors__AllowedOrigins: http://localhost:5222,https://mangoon.xyz,https://anxietywatch-web-g5mjb.ondigitalocean.app
+      Persistence__Provider: Mongo
       Mongo__ConnectionString: ${MONGO_ATLAS_CONNECTION_STRING}
       Mongo__DatabaseName: anxietywatch
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
+      Email__Provider: ${EMAIL_PROVIDER:-Resend}
+      Email__Resend__ApiKey: ${RESEND_API_KEY:-}
+      Email__From: ${EMAIL_FROM:-AnxietyWatch <no-reply@mail.mangoon.xyz>}
+      Email__VerificationUrl: ${EMAIL_VERIFICATION_URL:-https://mangoon.xyz/verify-email}
+      Email__PasswordResetUrl: ${EMAIL_PASSWORD_RESET_URL:-https://mangoon.xyz/reset-password}
+    ports:
+      - "127.0.0.1:8080:8080"
     networks:
       - anxietywatch_network
     healthcheck:
@@ -30,7 +36,35 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  reverse-proxy:
+    image: caddy:2.10.2-alpine
+    container_name: anxietywatch-caddy-prod
+    command:
+      - caddy
+      - reverse-proxy
+      - --from
+      - api.mangoon.xyz
+      - --to
+      - api:8080
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - anxietywatch_network
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
 networks:
   anxietywatch_network:
     driver: bridge
     external: false
+
+volumes:
+  caddy_data:
+  caddy_config:

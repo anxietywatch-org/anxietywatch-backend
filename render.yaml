@@ -13,5 +13,17 @@ services:
         value: Production
       - key: ASPNETCORE_HTTP_PORTS
         value: "10000"
+      - key: ASPNETCORE_FORWARDEDHEADERS_ENABLED
+        value: "true"
       - key: Jwt__SigningKey
         generateValue: true
+      - key: Email__Provider
+        value: Resend
+      - key: Email__Resend__ApiKey
+        sync: false
+      - key: Email__From
+        value: AnxietyWatch <no-reply@mail.mangoon.xyz>
+      - key: Email__VerificationUrl
+        value: https://mangoon.xyz/verify-email
+      - key: Email__PasswordResetUrl
+        value: https://mangoon.xyz/reset-password

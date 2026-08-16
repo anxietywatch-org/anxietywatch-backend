@@ -45,7 +45,7 @@ public sealed class ProtectedResourceTests(CustomWebApplicationFactory factory)
         var secondResponse = await client.PostAsJsonAsync("/api/tokens", new { role = "self" });
 
         firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        secondResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
 
         var deleteResponse = await client.DeleteAsync($"/api/tokens/{firstToken!.Id}");
         var thirdResponse = await client.PostAsJsonAsync("/api/tokens", new { role = "self" });

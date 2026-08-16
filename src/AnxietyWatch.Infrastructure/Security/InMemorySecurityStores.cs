@@ -61,4 +61,11 @@ public sealed class LoggingEmailSender(ILogger<LoggingEmailSender> logger) : IEm
         logger.LogInformation("Email queued for {Recipient} with subject {Subject}.", recipientEmail, subject);
         return Task.CompletedTask;
     }
+
+    public Task SendHtmlAsync(
+        string recipientEmail,
+        string subject,
+        string htmlBody,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(recipientEmail, subject, htmlBody, cancellationToken);
 }

@@ -1,6 +1,6 @@
 # AnxietyWatch API
 
-Backend de AnxietyWatch sobre .NET 10 con Clean Architecture, DDD y CQRS. Servicio REST con JWT para `https://github.com/Dianacoquette/AnxietyWatch.Web.git`.
+Backend de AnxietyWatch sobre .NET 10 con Clean Architecture, DDD y CQRS. Servicio REST con JWT para `https://github.com/anxietywatch-org/anxietywatch-web`.
 
 ## Proyectos
 
@@ -58,7 +58,7 @@ Los errores devuelven `application/problem+json` con esta forma:
 }
 ```
 
-Códigos usados: `400` validación, `401` credenciales/sesión inválidas, `403` cuota de plan superada o recurso ajeno, `404` no encontrado, `409` conflicto (email duplicado, token usado), `410` token de recuperación expirado, `429` demasiados intentos (incluye `Retry-After` en segundos).
+Códigos usados: `400` validación, `401` credenciales/sesión inválidas, `403` cuota de plan superada o recurso ajeno, `404` no encontrado, `409` conflicto (email duplicado, token usado), `410` token de recuperación expirado, `429` demasiados intentos y `503` proveedor temporalmente no disponible. `429` y `503` incluyen `Retry-After` en segundos.
 
 ### Autenticación
 
@@ -117,7 +117,7 @@ Sin cuerpo. Revoca el JWT actual; responde `{ "success": true }`.
 { "email": "ana@example.com" }
 ```
 
-Respuesta genérica: `{ "message": "..." }` (siempre igual para no revelar emails existentes).
+Respuesta genérica: `{ "message": "..." }` (siempre `200` e igual para no revelar emails existentes). La búsqueda, creación del token y entrega se procesan en segundo plano; un fallo del proveedor se registra internamente sin cambiar la respuesta. El endpoint limita cada IP a 20 solicitudes por minuto, deduplica cada destinatario durante 60 segundos y devuelve `429` al exceder el límite por IP.
 
 #### POST /api/auth/password/reset — 200
 
@@ -133,6 +133,8 @@ Responde `{ "message": "Password updated" }`. `410` si el token expiró (30 min)
 { "currentPassword": "vieja123", "newPassword": "nueva123" }
 ```
 
+El cambio persistido invalida los JWT emitidos anteriormente. La notificación por correo es best-effort y no convierte un cambio exitoso en un error HTTP.
+
 #### GET /api/auth/verify-email/status — 200 (protegido)
 
 ```json
@@ -141,7 +143,15 @@ Responde `{ "message": "Password updated" }`. `410` si el token expiró (30 min)
 
 #### POST /api/auth/verify-email/resend — 200 (protegido)
 
-Sin cuerpo. Responde `{ "message": "..." }`. Cooldown de 60 s → `429`.
+Sin cuerpo. Genera un token de un solo uso válido por 24 horas y envía un correo HTML con un enlace `Email:VerificationUrl#token=...`. El fragmento evita exponer el token en logs HTTP y cabeceras `Referer`; el frontend debe retirarlo del navegador y enviarlo al endpoint de confirmación. Responde `{ "message": "Verification email sent" }`. Cooldown de 60 s → `429`. Un rechazo definitivo del proveedor revierte token/cooldown; un fallo de entrega devuelve `503` sin exponer detalles de Resend.
+
+#### POST /api/auth/verify-email/confirm — 200 (público)
+
+```json
+{ "token": "<token-del-enlace>" }
+```
+
+Responde `{ "message": "Email verified" }` y `GET /api/auth/verify-email/status` pasa a devolver `true`. El token se almacena únicamente como hash SHA-256, expira en 24 horas y sólo puede confirmarse una vez. Devuelve `410` si expiró, fue reemplazado por un reenvío o ya se utilizó.
 
 ### Planes
 
@@ -253,6 +263,10 @@ Descarga `tokens.csv` (`text/csv`).
 
 ### Perfil y ajustes (protegido)
 
+#### GET /api/profile — 200
+
+Devuelve `{ "fullName": "...", "avatarUrl": null }` con los valores actuales.
+
 #### PATCH /api/profile — 200
 
 ```json
@@ -260,6 +274,10 @@ Descarga `tokens.csv` (`text/csv`).
 ```
 
 Responde `{ "fullName": "...", "avatarUrl": null }`.
+
+#### GET /api/settings — 200
+
+Devuelve `{ "anxietyThreshold": 70, "pushNotifications": true, "privateMode": false }` con las preferencias actuales.
 
 #### PATCH /api/settings — 200
 
@@ -287,19 +305,6 @@ Responde `{ "anxietyThreshold": 70, "pushNotifications": true, "privateMode": fa
 
 Política `Frontend` habilitada con orígenes configurados en `Cors:AllowedOrigins` (comma-separated). Valores predeterminados para desarrollo del frontend: `http://localhost:5222,https://localhost:7130`.
 
-### Fallback temporal para MongoDB Atlas
+## DevOps
 
-Si Atlas presenta un problema de conectividad, configure `Persistence__Provider=InMemory` en el entorno de
-la Droplet y ejecute el pipeline normal de `develop`. Esta opción permite validar autenticación, planes,
-telemetría y SOS, pero los datos se perderán al reiniciar o volver a desplegar el contenedor. Cuando Atlas
-esté disponible, quite la variable o establézcala de nuevo en `Mongo` y vuelva a desplegar mediante el pipeline.
-
-## Despliegue en Render
-
-El archivo `render.yaml` define un Web Service Docker con health check en `/health` y puerto `10000`. No requiere variables manuales: usa el proveedor InMemory y `Jwt__SigningKey` auto-generado.
-
-1. En Render, seleccionar **New > Blueprint** y conectar este repositorio de GitHub.
-2. Confirmar el servicio definido en `render.yaml` (rama `main`, auto-deploy en cada push).
-3. Esperar el deploy y comprobar `https://<servicio>.onrender.com/health` → `{ "status": "ok" }`.
-
-Nota: usuarios, episodios y tokens quedan en memoria (se reinician con cada deploy). Para persistir, definir `Persistence__Provider=Mongo` y `Mongo__ConnectionString` desde el dashboard. Para producción, definir `Cors__AllowedOrigins` con la URL del frontend (vacío = cualquier origen).
+El despliegue operativo está documentado en [docs/DEVOPS.md](docs/DEVOPS.md). La rama desplegada de la API pública es `develop` y el endpoint estable es `https://api.mangoon.xyz`.

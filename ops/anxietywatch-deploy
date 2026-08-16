@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly APP_DIR=/opt/anxietywatch-backend
+readonly COMPOSE_FILE="${APP_DIR}/docker-compose.prod.yml"
+readonly PREVIOUS_COMPOSE_FILE="${APP_DIR}/docker-compose.prod.yml.previous"
+readonly IMAGE='ghcr.io/anxietywatch-org/anxietywatch-backend:develop'
+readonly ROLLBACK_IMAGE='ghcr.io/anxietywatch-org/anxietywatch-backend:rollback'
+
+command_name="${SSH_ORIGINAL_COMMAND:-${1:-}}"
+
+case "${command_name}" in
+  upload-compose)
+    incoming_file="$(mktemp "${APP_DIR}/docker-compose.prod.yml.incoming.XXXXXX")"
+    trap 'rm -f "${incoming_file}"' EXIT
+    cat > "${incoming_file}"
+    chmod 600 "${incoming_file}"
+    docker compose --env-file "${APP_DIR}/.env" -f "${incoming_file}" config --quiet
+    cp "${COMPOSE_FILE}" "${PREVIOUS_COMPOSE_FILE}"
+    install -m 600 "${incoming_file}" "${COMPOSE_FILE}"
+    ;;
+
+  load-image)
+    if docker image inspect "${IMAGE}" >/dev/null 2>&1; then
+      docker tag "${IMAGE}" "${ROLLBACK_IMAGE}"
+    fi
+    docker load
+    ;;
+
+  deploy)
+    exec 9>/var/lock/anxietywatch-backend-deploy.lock
+    flock -n 9 || {
+      echo 'Another AnxietyWatch deployment is already running.' >&2
+      exit 75
+    }
+
+    cd "${APP_DIR}"
+    if ! docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans --wait --wait-timeout 180; then
+      if docker image inspect "${ROLLBACK_IMAGE}" >/dev/null 2>&1; then
+        docker tag "${ROLLBACK_IMAGE}" "${IMAGE}"
+      fi
+      if [[ -f "${PREVIOUS_COMPOSE_FILE}" ]]; then
+        cp "${PREVIOUS_COMPOSE_FILE}" "${COMPOSE_FILE}"
+      fi
+      docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans --wait --wait-timeout 180
+      echo 'Deployment failed; the previous image and Compose file were restored.' >&2
+      exit 1
+    fi
+
+    curl --fail --silent --show-error --max-time 15 http://127.0.0.1:8080/health >/dev/null
+    docker image prune -f >/dev/null
+    ;;
+
+  *)
+    echo 'Unsupported restricted deployment command.' >&2
+    exit 64
+    ;;
+esac

@@ -10,7 +10,7 @@ public interface IPasswordHasher
 
 public interface IJwtTokenService
 {
-    JwtToken Create(Guid userId, string email, string planId);
+    JwtToken Create(Guid userId, string email, string planId, long securityVersion);
 }
 
 public sealed record JwtToken(string AccessToken, DateTimeOffset ExpiresAt, string JwtId);
@@ -40,4 +40,20 @@ public interface IPasswordResetTokenStore
 public interface IEmailSender
 {
     Task SendAsync(string recipientEmail, string subject, string body, CancellationToken cancellationToken = default);
+    Task SendHtmlAsync(string recipientEmail, string subject, string htmlBody, CancellationToken cancellationToken = default);
+}
+
+public interface IEmailVerificationLinkFactory
+{
+    string Create(string token);
+}
+
+public interface IPasswordResetLinkFactory
+{
+    string Create(string token);
+}
+
+public interface IPasswordRecoveryEmailQueue
+{
+    bool TryQueue(string normalizedEmail);
 }

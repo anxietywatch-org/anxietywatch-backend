@@ -1,10 +1,14 @@
 using AnxietyWatch.Application;
 using AnxietyWatch.Infrastructure;
 using AnxietyWatch.Application.Abstractions.Security;
+using AnxietyWatch.Domain.Users;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,7 +25,7 @@ if (string.IsNullOrWhiteSpace(signingKey))
 }
 
 builder.Services.AddApplication();
-builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 builder.Services
     .AddControllers()
     .AddJsonOptions(options => options.JsonSerializerOptions.PropertyNameCaseInsensitive = true);
@@ -42,6 +46,43 @@ builder.Services.AddCors(options =>
 
         policy.AllowAnyHeader().AllowAnyMethod();
     });
+});
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (context, _) =>
+    {
+        context.HttpContext.Response.Headers.RetryAfter = "60";
+        return ValueTask.CompletedTask;
+    };
+    options.AddPolicy("password-recovery", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+    options.AddPolicy("support-tickets", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+});
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+    options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("10.0.0.0/8"));
+    options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("172.16.0.0/12"));
+    options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("192.168.0.0/16"));
 });
 builder.Services.AddAuthorization(options =>
 {
@@ -81,6 +122,23 @@ builder.Services
                 if (await revokedTokens.IsRevokedAsync(jwtId, context.HttpContext.RequestAborted))
                 {
                     context.Fail("JWT has been revoked.");
+                    return;
+                }
+
+                var userIdValue = context.Principal?.FindFirst("sub")?.Value;
+                var securityVersionValue = context.Principal?.FindFirst("security_version")?.Value;
+                if (!Guid.TryParse(userIdValue, out var userId) ||
+                    !long.TryParse(securityVersionValue ?? "0", out var securityVersion))
+                {
+                    context.Fail("JWT security state is invalid.");
+                    return;
+                }
+
+                var users = context.HttpContext.RequestServices.GetRequiredService<IUserRepository>();
+                var user = await users.GetByIdAsync(userId, context.HttpContext.RequestAborted);
+                if (user is null || user.SecurityVersion != securityVersion)
+                {
+                    context.Fail("JWT security state is stale.");
                 }
             }
         };
@@ -88,13 +146,16 @@ builder.Services
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
 app.UseMiddleware<AnxietyWatch.Api.Middleware.ExceptionHandlingMiddleware>();
 if (!app.Environment.IsProduction() && !app.Environment.IsEnvironment("Testing"))
 {
     app.UseHttpsRedirection();
 }
 
+app.UseRouting();
 app.UseCors("Frontend");
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

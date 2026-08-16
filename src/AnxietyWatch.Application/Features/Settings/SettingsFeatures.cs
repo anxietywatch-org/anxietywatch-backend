@@ -10,6 +10,18 @@ public sealed record UpdateProfileCommand(string FullName, string? AvatarUrl) : 
 
 public sealed record ProfileResponse(string FullName, string? AvatarUrl);
 
+public sealed record GetProfileQuery : IRequest<ProfileResponse>;
+
+public sealed class GetProfileQueryHandler(ICurrentUser currentUser, IUserRepository users)
+    : IRequestHandler<GetProfileQuery, ProfileResponse>
+{
+    public async Task<ProfileResponse> Handle(GetProfileQuery request, CancellationToken cancellationToken)
+    {
+        var user = await UpdateProfileCommandHandler.RequireUser(currentUser, users, cancellationToken);
+        return new ProfileResponse(user.FullName, user.AvatarUrl);
+    }
+}
+
 public sealed class UpdateProfileCommandValidator : AbstractValidator<UpdateProfileCommand>
 {
     public UpdateProfileCommandValidator()
@@ -51,6 +63,18 @@ public sealed record UpdateSettingsCommand(
     bool PrivateMode) : IRequest<SettingsResponse>;
 
 public sealed record SettingsResponse(int AnxietyThreshold, bool PushNotifications, bool PrivateMode);
+
+public sealed record GetSettingsQuery : IRequest<SettingsResponse>;
+
+public sealed class GetSettingsQueryHandler(ICurrentUser currentUser, IUserRepository users)
+    : IRequestHandler<GetSettingsQuery, SettingsResponse>
+{
+    public async Task<SettingsResponse> Handle(GetSettingsQuery request, CancellationToken cancellationToken)
+    {
+        var user = await UpdateProfileCommandHandler.RequireUser(currentUser, users, cancellationToken);
+        return new SettingsResponse(user.AnxietyThreshold, user.PushNotifications, user.PrivateMode);
+    }
+}
 
 public sealed class UpdateSettingsCommandValidator : AbstractValidator<UpdateSettingsCommand>
 {

@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using AnxietyWatch.Application.Abstractions.Security;
@@ -41,8 +42,8 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
             .MinimumLength(8)
             .MaximumLength(30);
         RuleFor(command => command.PlanId)
-            .Must(value => new[] { "free", "individual", "family", "professional" }
-                .Contains(value, StringComparer.OrdinalIgnoreCase));
+            .Equal("free", StringComparer.OrdinalIgnoreCase)
+            .WithMessage("Paid plans require a completed checkout.");
         RuleFor(command => command.BillingCycle)
             .Must(value => new[] { "monthly", "yearly" }
                 .Contains(value, StringComparer.OrdinalIgnoreCase));
@@ -56,7 +57,10 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
 public sealed class RegisterCommandHandler(
     IUserRepository users,
     IPasswordHasher passwordHasher,
-    IJwtTokenService jwtTokenService)
+    IJwtTokenService jwtTokenService,
+    ISystemClock clock,
+    IEmailSender emailSender,
+    IEmailVerificationLinkFactory verificationLinkFactory)
     : IRequestHandler<RegisterCommand, AuthenticationResponse>
 {
     public async Task<AuthenticationResponse> Handle(
@@ -74,10 +78,62 @@ public sealed class RegisterCommandHandler(
             command.FullName.Trim(),
             email,
             passwordHasher.Hash(command.Password),
-            command.PlanId.ToLowerInvariant());
+            "free");
 
         await users.AddAsync(user, cancellationToken);
-        return CreateResponse(user, jwtTokenService.Create(user.Id, user.Email, user.PlanId));
+        await TrySendInitialVerificationAsync(user, cancellationToken);
+        return CreateResponse(user, jwtTokenService.Create(
+            user.Id,
+            user.Email,
+            user.PlanId,
+            user.SecurityVersion));
+    }
+
+    private async Task TrySendInitialVerificationAsync(User user, CancellationToken cancellationToken)
+    {
+        var rawToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        var tokenHash = ForgotPasswordCommandHandler.HashToken(rawToken);
+        var sentAt = clock.UtcNow;
+        var previousState = await users.StoreEmailVerificationTokenAsync(
+            user.Id,
+            sentAt,
+            tokenHash,
+            sentAt.AddHours(24),
+            user.Version,
+            cancellationToken);
+        if (previousState is null) return;
+
+        try
+        {
+            await emailSender.SendHtmlAsync(
+                user.Email,
+                "Verify your AnxietyWatch email",
+                AnxietyWatchEmailTemplates.Verification(verificationLinkFactory.Create(rawToken), user.FullName),
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            if (exception is EmailDeliveryException { DeliveryMayHaveSucceeded: true }) return;
+
+            try
+            {
+                using var rollbackTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await users.RollbackEmailVerificationTokenAsync(
+                    user.Id,
+                    tokenHash,
+                    sentAt,
+                    previousState,
+                    rollbackTimeout.Token);
+            }
+            catch
+            {
+                // Registration remains valid. The user can request a fresh email from the pending screen.
+            }
+        }
     }
 
     internal static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
@@ -117,30 +173,58 @@ public sealed class LoginCommandHandler(
             throw new UnauthorizedApplicationException("Invalid credentials.");
         }
 
-        if (user.IsLockedOut(now))
+        while (true)
         {
-            var retryAfter = Math.Max(1, (int)Math.Ceiling((user.LockoutUntil!.Value - now).TotalSeconds));
-            throw new TooManyRequestsException("Too many failed login attempts.", retryAfter);
-        }
-
-        if (!passwordHasher.Verify(command.Password, user.PasswordHash))
-        {
-            user.RegisterFailedLogin(now);
-            await users.UpdateAsync(user, cancellationToken);
-
             if (user.IsLockedOut(now))
             {
-                throw new TooManyRequestsException("Too many failed login attempts.", 60);
+                var retryAfter = Math.Max(1, (int)Math.Ceiling((user.LockoutUntil!.Value - now).TotalSeconds));
+                throw new TooManyRequestsException("Too many failed login attempts.", retryAfter);
             }
 
-            throw new UnauthorizedApplicationException("Invalid credentials.");
-        }
+            if (!passwordHasher.Verify(command.Password, user.PasswordHash))
+            {
+                var failedUser = await users.RegisterFailedLoginAsync(
+                    user.Id,
+                    now,
+                    user.PasswordHash,
+                    cancellationToken);
+                if (failedUser is null)
+                {
+                    user = await users.GetByIdAsync(user.Id, cancellationToken)
+                        ?? throw new UnauthorizedApplicationException("Invalid credentials.");
+                    continue;
+                }
 
-        user.RegisterSuccessfulLogin();
-        await users.UpdateAsync(user, cancellationToken);
-        return RegisterCommandHandler.CreateResponse(
-            user,
-            jwtTokenService.Create(user.Id, user.Email, user.PlanId));
+                user = failedUser;
+
+                if (user.IsLockedOut(now))
+                {
+                    throw new TooManyRequestsException("Too many failed login attempts.", 60);
+                }
+
+                throw new UnauthorizedApplicationException("Invalid credentials.");
+            }
+
+            var authenticatedUser = await users.RegisterSuccessfulLoginAsync(
+                user.Id,
+                now,
+                user.Version,
+                user.PasswordHash,
+                cancellationToken);
+            if (authenticatedUser is not null)
+            {
+                return RegisterCommandHandler.CreateResponse(
+                    authenticatedUser,
+                    jwtTokenService.Create(
+                        authenticatedUser.Id,
+                        authenticatedUser.Email,
+                        authenticatedUser.PlanId,
+                        authenticatedUser.SecurityVersion));
+            }
+
+            user = await users.GetByIdAsync(user.Id, cancellationToken)
+                ?? throw new UnauthorizedApplicationException("Invalid credentials.");
+        }
     }
 }
 
@@ -159,7 +243,7 @@ public sealed class GetSessionQueryHandler(
         var user = await RequireUserAsync(currentUser, users, cancellationToken);
         return RegisterCommandHandler.CreateResponse(
             user,
-            jwtTokenService.Create(user.Id, user.Email, user.PlanId));
+            jwtTokenService.Create(user.Id, user.Email, user.PlanId, user.SecurityVersion));
     }
 
     internal static async Task<User> RequireUserAsync(
@@ -207,31 +291,18 @@ public sealed class ForgotPasswordCommandValidator : AbstractValidator<ForgotPas
 }
 
 public sealed class ForgotPasswordCommandHandler(
-    IUserRepository users,
-    IPasswordResetTokenStore resetTokens,
-    IEmailSender emailSender,
-    ISystemClock clock)
+    IPasswordRecoveryEmailQueue emailQueue)
     : IRequestHandler<ForgotPasswordCommand, ForgotPasswordResponse>
 {
     private const string GenericMessage = "If the email exists, a recovery link will be sent.";
 
-    public async Task<ForgotPasswordResponse> Handle(
+    public Task<ForgotPasswordResponse> Handle(
         ForgotPasswordCommand command,
         CancellationToken cancellationToken)
     {
-        var user = await users.GetByEmailAsync(RegisterCommandHandler.NormalizeEmail(command.Email), cancellationToken);
-        if (user is not null)
-        {
-            var rawToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-            await resetTokens.StoreAsync(
-                HashToken(rawToken),
-                user.Id,
-                clock.UtcNow.AddMinutes(30),
-                cancellationToken);
-            await emailSender.SendAsync(user.Email, "AnxietyWatch password recovery", rawToken, cancellationToken);
-        }
+        emailQueue.TryQueue(RegisterCommandHandler.NormalizeEmail(command.Email));
 
-        return new ForgotPasswordResponse(GenericMessage);
+        return Task.FromResult(new ForgotPasswordResponse(GenericMessage));
     }
 
     internal static string HashToken(string token) =>
@@ -267,10 +338,13 @@ public sealed class ResetPasswordCommandHandler(
             throw new GoneException("The recovery token is expired or has already been used.");
         }
 
-        var user = await users.GetByIdAsync(userId.Value, cancellationToken)
-            ?? throw new GoneException("The recovery token is invalid.");
-        user.UpdatePassword(passwordHasher.Hash(command.NewPassword));
-        await users.UpdateAsync(user, cancellationToken);
+        if (!await users.UpdatePasswordAsync(
+                userId.Value,
+                passwordHasher.Hash(command.NewPassword),
+                cancellationToken))
+        {
+            throw new GoneException("The recovery token is invalid.");
+        }
         return "Password updated";
     }
 }
@@ -303,7 +377,19 @@ public sealed class ChangePasswordCommandHandler(
 
         user.UpdatePassword(passwordHasher.Hash(command.NewPassword));
         await users.UpdateAsync(user, cancellationToken);
-        await emailSender.SendAsync(user.Email, "AnxietyWatch password changed", "Your password was changed.", cancellationToken);
+        try
+        {
+            await emailSender.SendHtmlAsync(
+                user.Email,
+                "AnxietyWatch password changed",
+                AnxietyWatchEmailTemplates.PasswordChanged(user.FullName),
+                cancellationToken);
+        }
+        catch (EmailDeliveryException)
+        {
+            // The password update is committed; the notification is best-effort.
+        }
+
         return "Password updated";
     }
 }
@@ -330,22 +416,129 @@ public sealed class ResendVerificationEmailCommandHandler(
     ICurrentUser currentUser,
     IUserRepository users,
     ISystemClock clock,
-    IEmailSender emailSender)
+    IEmailSender emailSender,
+    IEmailVerificationLinkFactory linkFactory)
     : IRequestHandler<ResendVerificationEmailCommand, string>
 {
     public async Task<string> Handle(ResendVerificationEmailCommand request, CancellationToken cancellationToken)
     {
-        var user = await GetSessionQueryHandler.RequireUserAsync(currentUser, users, cancellationToken);
-        var now = clock.UtcNow;
-        if (user.LastVerificationEmailSentAt is not null &&
-            now - user.LastVerificationEmailSentAt < TimeSpan.FromSeconds(60))
+        User user;
+        string rawToken;
+        string tokenHash;
+        DateTimeOffset sentAt;
+        EmailVerificationTokenState previousState;
+        while (true)
         {
-            throw new TooManyRequestsException("Verification email cooldown is active.", 60);
+            user = await GetSessionQueryHandler.RequireUserAsync(currentUser, users, cancellationToken);
+            if (user.EmailVerified)
+            {
+                return "Email is already verified";
+            }
+
+            var now = clock.UtcNow;
+            if (user.LastVerificationEmailSentAt is not null &&
+                now - user.LastVerificationEmailSentAt < TimeSpan.FromSeconds(60))
+            {
+                throw new TooManyRequestsException("Verification email cooldown is active.", 60);
+            }
+
+            rawToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+            tokenHash = ForgotPasswordCommandHandler.HashToken(rawToken);
+            sentAt = now;
+            var storedState = await users.StoreEmailVerificationTokenAsync(
+                user.Id,
+                sentAt,
+                tokenHash,
+                now.AddHours(24),
+                user.Version,
+                cancellationToken);
+            if (storedState is not null)
+            {
+                previousState = storedState;
+                break;
+            }
         }
 
-        user.MarkVerificationEmailSent(now);
-        await users.UpdateAsync(user, cancellationToken);
-        await emailSender.SendAsync(user.Email, "Verify your AnxietyWatch email", "Verification link", cancellationToken);
+        try
+        {
+            var verificationLink = linkFactory.Create(rawToken);
+            await emailSender.SendHtmlAsync(
+                user.Email,
+                "Verify your AnxietyWatch email",
+                AnxietyWatchEmailTemplates.Verification(verificationLink, user.FullName),
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            if (exception is OperationCanceledException)
+            {
+                throw;
+            }
+
+            if (exception is not EmailDeliveryException { DeliveryMayHaveSucceeded: true })
+            {
+                try
+                {
+                    using var rollbackTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    await users.RollbackEmailVerificationTokenAsync(
+                        user.Id,
+                        tokenHash,
+                        sentAt,
+                        previousState,
+                        rollbackTimeout.Token);
+                }
+                catch (Exception rollbackException)
+                {
+                    if (exception is EmailDeliveryException)
+                    {
+                        throw new ServiceUnavailableException(
+                            "Email delivery is temporarily unavailable.",
+                            innerException: new AggregateException(exception, rollbackException));
+                    }
+
+                    throw new AggregateException(exception, rollbackException);
+                }
+            }
+
+            if (exception is EmailDeliveryException emailDeliveryException)
+            {
+                throw new ServiceUnavailableException(
+                    "Email delivery is temporarily unavailable.",
+                    emailDeliveryException.DeliveryMayHaveSucceeded ? 60 : 30,
+                    innerException: emailDeliveryException);
+            }
+
+            throw;
+        }
+
         return "Verification email sent";
+    }
+
+    internal static string CreateEmailBody(string verificationLink)
+        => AnxietyWatchEmailTemplates.Verification(verificationLink, "usuario");
+}
+
+public sealed record ConfirmEmailCommand(string Token) : IRequest<string>;
+
+public sealed class ConfirmEmailCommandValidator : AbstractValidator<ConfirmEmailCommand>
+{
+    public ConfirmEmailCommandValidator() => RuleFor(command => command.Token).NotEmpty().MaximumLength(256);
+}
+
+public sealed class ConfirmEmailCommandHandler(IUserRepository users, ISystemClock clock)
+    : IRequestHandler<ConfirmEmailCommand, string>
+{
+    public async Task<string> Handle(ConfirmEmailCommand command, CancellationToken cancellationToken)
+    {
+        var confirmed = await users.ConfirmEmailAsync(
+            ForgotPasswordCommandHandler.HashToken(command.Token),
+            clock.UtcNow,
+            cancellationToken);
+        if (!confirmed)
+        {
+            throw new GoneException("The verification link is expired or has already been used.");
+        }
+
+        return "Email verified";
     }
 }
