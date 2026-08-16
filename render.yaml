@@ -25,3 +25,5 @@ services:
         value: AnxietyWatch <no-reply@mail.mangoon.xyz>
       - key: Email__VerificationUrl
         value: https://mangoon.xyz/verify-email
+      - key: Email__PasswordResetUrl
+        value: https://mangoon.xyz/reset-password

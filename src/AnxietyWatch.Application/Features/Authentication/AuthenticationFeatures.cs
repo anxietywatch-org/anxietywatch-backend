@@ -57,7 +57,10 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
 public sealed class RegisterCommandHandler(
     IUserRepository users,
     IPasswordHasher passwordHasher,
-    IJwtTokenService jwtTokenService)
+    IJwtTokenService jwtTokenService,
+    ISystemClock clock,
+    IEmailSender emailSender,
+    IEmailVerificationLinkFactory verificationLinkFactory)
     : IRequestHandler<RegisterCommand, AuthenticationResponse>
 {
     public async Task<AuthenticationResponse> Handle(
@@ -78,11 +81,59 @@ public sealed class RegisterCommandHandler(
             "free");
 
         await users.AddAsync(user, cancellationToken);
+        await TrySendInitialVerificationAsync(user, cancellationToken);
         return CreateResponse(user, jwtTokenService.Create(
             user.Id,
             user.Email,
             user.PlanId,
             user.SecurityVersion));
+    }
+
+    private async Task TrySendInitialVerificationAsync(User user, CancellationToken cancellationToken)
+    {
+        var rawToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        var tokenHash = ForgotPasswordCommandHandler.HashToken(rawToken);
+        var sentAt = clock.UtcNow;
+        var previousState = await users.StoreEmailVerificationTokenAsync(
+            user.Id,
+            sentAt,
+            tokenHash,
+            sentAt.AddHours(24),
+            user.Version,
+            cancellationToken);
+        if (previousState is null) return;
+
+        try
+        {
+            await emailSender.SendHtmlAsync(
+                user.Email,
+                "Verify your AnxietyWatch email",
+                AnxietyWatchEmailTemplates.Verification(verificationLinkFactory.Create(rawToken), user.FullName),
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            if (exception is EmailDeliveryException { DeliveryMayHaveSucceeded: true }) return;
+
+            try
+            {
+                using var rollbackTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await users.RollbackEmailVerificationTokenAsync(
+                    user.Id,
+                    tokenHash,
+                    sentAt,
+                    previousState,
+                    rollbackTimeout.Token);
+            }
+            catch
+            {
+                // Registration remains valid. The user can request a fresh email from the pending screen.
+            }
+        }
     }
 
     internal static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
@@ -328,10 +379,10 @@ public sealed class ChangePasswordCommandHandler(
         await users.UpdateAsync(user, cancellationToken);
         try
         {
-            await emailSender.SendAsync(
+            await emailSender.SendHtmlAsync(
                 user.Email,
                 "AnxietyWatch password changed",
-                "Your password was changed.",
+                AnxietyWatchEmailTemplates.PasswordChanged(user.FullName),
                 cancellationToken);
         }
         catch (EmailDeliveryException)
@@ -414,7 +465,7 @@ public sealed class ResendVerificationEmailCommandHandler(
             await emailSender.SendHtmlAsync(
                 user.Email,
                 "Verify your AnxietyWatch email",
-                CreateEmailBody(verificationLink),
+                AnxietyWatchEmailTemplates.Verification(verificationLink, user.FullName),
                 cancellationToken);
         }
         catch (Exception exception)
@@ -464,31 +515,7 @@ public sealed class ResendVerificationEmailCommandHandler(
     }
 
     internal static string CreateEmailBody(string verificationLink)
-    {
-        var encodedLink = WebUtility.HtmlEncode(verificationLink);
-        return $$"""
-            <!doctype html>
-            <html lang="en">
-            <body style="margin:0;background:#f4f7f5;font-family:Arial,sans-serif;color:#17352d">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:32px 16px;background:#f4f7f5">
-                <tr><td align="center">
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;padding:40px;box-shadow:0 8px 30px rgba(23,53,45,.08)">
-                    <tr><td>
-                      <p style="margin:0 0 12px;color:#26735f;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">AnxietyWatch</p>
-                      <h1 style="margin:0 0 16px;font-size:28px;line-height:1.2">Verify your email</h1>
-                      <p style="margin:0 0 28px;color:#4d625c;font-size:16px;line-height:1.6">Confirm this email address to finish securing your AnxietyWatch account. This link expires in 24 hours.</p>
-                      <a href="{{encodedLink}}" style="display:inline-block;padding:14px 24px;border-radius:10px;background:#26735f;color:#ffffff;text-decoration:none;font-weight:700">Verify email</a>
-                      <p style="margin:28px 0 8px;color:#6b7d78;font-size:13px;line-height:1.5">If the button does not work, open this link:</p>
-                      <p style="margin:0;word-break:break-all;font-size:13px"><a href="{{encodedLink}}" style="color:#26735f">{{encodedLink}}</a></p>
-                      <p style="margin:28px 0 0;color:#6b7d78;font-size:13px;line-height:1.5">If you did not request this email, you can safely ignore it.</p>
-                    </td></tr>
-                  </table>
-                </td></tr>
-              </table>
-            </body>
-            </html>
-            """;
-    }
+        => AnxietyWatchEmailTemplates.Verification(verificationLink, "usuario");
 }
 
 public sealed record ConfirmEmailCommand(string Token) : IRequest<string>;

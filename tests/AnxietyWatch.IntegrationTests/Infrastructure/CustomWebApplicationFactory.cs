@@ -22,7 +22,9 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
         {
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Persistence:Provider"] = "InMemory"
+                ["Persistence:Provider"] = "InMemory",
+                ["Email:VerificationUrl"] = "https://example.test/verify-email",
+                ["Email:PasswordResetUrl"] = "https://example.test/reset-password"
             });
         });
         builder.ConfigureServices(services =>

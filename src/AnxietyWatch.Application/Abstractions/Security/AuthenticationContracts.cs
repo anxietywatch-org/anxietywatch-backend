@@ -48,6 +48,11 @@ public interface IEmailVerificationLinkFactory
     string Create(string token);
 }
 
+public interface IPasswordResetLinkFactory
+{
+    string Create(string token);
+}
+
 public interface IPasswordRecoveryEmailQueue
 {
     bool TryQueue(string normalizedEmail);

@@ -47,6 +47,12 @@ public sealed class AuthenticationEndpointTests(CustomWebApplicationFactory fact
         var registration = await registerResponse.Content.ReadFromJsonAsync<AuthResponse>();
         registration.Should().NotBeNull();
         registration!.User.Email.Should().Be(email);
+        var verificationEmail = await factory.EmailSender.WaitForMessageAsync(
+            email,
+            "Verify your AnxietyWatch email",
+            TimeSpan.FromSeconds(2));
+        verificationEmail.HtmlBody.Should().Contain("Verifica tu correo");
+        verificationEmail.HtmlBody.Should().Contain("https://example.test/verify-email#token=");
 
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", registration.Token);
@@ -190,6 +196,7 @@ public sealed class AuthenticationEndpointTests(CustomWebApplicationFactory fact
     {
         using var client = factory.CreateClient();
         var email = $"{Guid.NewGuid():N}@example.test";
+        factory.EmailSender.FailNextDelivery(email);
         var registerResponse = await client.PostAsJsonAsync("/api/auth/register", new
         {
             fullName = "Resend Failure User",
@@ -282,6 +289,8 @@ public sealed class AuthenticationEndpointTests(CustomWebApplicationFactory fact
             email,
             "AnxietyWatch password recovery",
             TimeSpan.FromSeconds(5))).HtmlBody;
+        resetToken = Regex.Match(resetToken, "token=([A-F0-9]{64})").Groups[1].Value;
+        resetToken.Should().HaveLength(64);
 
         using var anonymousClient = factory.CreateClient();
         var reset = await anonymousClient.PostAsJsonAsync("/api/auth/password/reset", new
@@ -319,13 +328,10 @@ public sealed class AuthenticationEndpointTests(CustomWebApplicationFactory fact
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", registration!.Token);
 
-        var resendResponse = await client.PostAsync("/api/auth/verify-email/resend", null);
-
-        resendResponse.IsSuccessStatusCode.Should().BeTrue();
         var emailMessage = factory.EmailSender.Messages.Single(message => message.Recipient == email);
         emailMessage.Subject.Should().Be("Verify your AnxietyWatch email");
-        emailMessage.HtmlBody.Should().Contain("https://mangoon.xyz/verify-email#token=");
-        emailMessage.HtmlBody.Should().Contain("Verify email");
+        emailMessage.HtmlBody.Should().Contain("https://example.test/verify-email#token=");
+        emailMessage.HtmlBody.Should().Contain("Verificar mi correo");
         var token = Regex.Match(emailMessage.HtmlBody, "token=([A-F0-9]{64})").Groups[1].Value;
         token.Should().HaveLength(64);
 
