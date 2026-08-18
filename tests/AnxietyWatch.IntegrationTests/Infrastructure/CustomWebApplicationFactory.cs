@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using AnxietyWatch.Application.Abstractions.Security;
 using AnxietyWatch.Application.Common;
 using Microsoft.AspNetCore.Hosting;
@@ -13,6 +15,23 @@ namespace AnxietyWatch.IntegrationTests.Infrastructure;
 public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 {
     public TestEmailSender EmailSender { get; } = new();
+
+    public async Task<HttpClient> CreateAuthenticatedClientAsync(string? email = null)
+    {
+        var client = CreateClient();
+        var registration = await client.PostAsJsonAsync("/api/auth/register", new
+        {
+            fullName = "Integration User",
+            email = email ?? $"{Guid.NewGuid():N}@example.test",
+            password = "Password1",
+            planId = "free",
+            billingCycle = "monthly",
+            paymentMethodToken = (string?)null
+        });
+        var auth = await registration.Content.ReadFromJsonAsync<AuthResponse>();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth!.Token);
+        return client;
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -36,6 +55,8 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 }
 
 public sealed record TestEmailMessage(string Recipient, string Subject, string HtmlBody);
+
+public sealed record AuthResponse(string Token);
 
 public sealed class TestEmailSender : IEmailSender
 {
