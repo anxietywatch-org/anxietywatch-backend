@@ -8,13 +8,14 @@ public sealed class User : AggregateRoot
     {
     }
 
-    public User(Guid id, string fullName, string email, string passwordHash, string planId)
+    public User(Guid id, string fullName, string email, string passwordHash, string planId, string role = "patient")
         : base(id)
     {
         FullName = fullName;
         Email = email;
         PasswordHash = passwordHash;
         PlanId = planId;
+        Role = role;
     }
 
     public static User Restore(
@@ -33,9 +34,10 @@ public sealed class User : AggregateRoot
         DateTimeOffset? firstFailedLoginAt,
         DateTimeOffset? lockoutUntil,
         long version,
-        long securityVersion)
+        long securityVersion,
+        string role = "patient")
     {
-        var user = new User(id, fullName, email, passwordHash, planId)
+        var user = new User(id, fullName, email, passwordHash, planId, role)
         {
             EmailVerified = emailVerified,
             LastVerificationEmailSentAt = lastVerificationEmailSentAt,
@@ -57,6 +59,7 @@ public sealed class User : AggregateRoot
     public string Email { get; private set; } = string.Empty;
     public string PasswordHash { get; private set; } = string.Empty;
     public string PlanId { get; private set; } = string.Empty;
+    public string Role { get; private set; } = string.Empty;
     public bool EmailVerified { get; private set; }
     public DateTimeOffset? LastVerificationEmailSentAt { get; private set; }
     public string? AvatarUrl { get; private set; }

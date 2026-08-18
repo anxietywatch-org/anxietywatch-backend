@@ -161,13 +161,28 @@ public sealed class AcceptTokenCommandHandler(
         CreateTokenCommandHandler.RequireAuthenticatedUser(currentUser);
         var token = await tokens.GetByIdAsync(command.Id, cancellationToken)
             ?? throw new NotFoundException("Token not found.");
-        if (token.Status != TokenStatus.Pending || token.ExpiresAt <= clock.UtcNow)
+
+        if (token.Status == TokenStatus.Accepted)
         {
-            throw new ConflictException("The token is expired or has already been used.");
+            throw new ConflictException("The token has already been used.");
         }
 
-        token.Accept(currentUser.UserId, clock.UtcNow);
-        await tokens.UpdateAsync(token, cancellationToken);
+        if (token.Status is TokenStatus.Deleted or TokenStatus.Expired)
+        {
+            throw new ConflictException("The token is no longer available.");
+        }
+
+        var now = clock.UtcNow;
+        if (token.ExpiresAt <= now)
+        {
+            throw new GoneException("The token has expired.");
+        }
+
+        if (!await tokens.TryAcceptAsync(command.Id, currentUser.UserId, now, cancellationToken))
+        {
+            throw new ConflictException("The token has already been used.");
+        }
+
         return "accepted";
     }
 }

@@ -41,31 +41,46 @@ public sealed class TokenRedeemCommandHandler(
         var token = await tokens.GetByCodeAsync(normalizedCode, cancellationToken)
             ?? throw new NotFoundException("The code is invalid.");
 
-        if (token.Status != TokenStatus.Pending || token.ExpiresAt <= clock.UtcNow)
+        if (token.Status == TokenStatus.Accepted)
         {
-            throw new ConflictException("The code is expired or has already been used.");
+            throw new ConflictException("The code has already been used.");
+        }
+
+        if (token.Status is TokenStatus.Deleted or TokenStatus.Expired)
+        {
+            throw new ConflictException("The code is no longer available.");
+        }
+
+        var now = clock.UtcNow;
+        if (token.ExpiresAt <= now)
+        {
+            throw new GoneException("The code has expired.");
+        }
+
+        var isSelf = string.Equals(token.Role, "self", StringComparison.OrdinalIgnoreCase);
+        var accountId = isSelf ? token.UserId : Guid.NewGuid();
+        if (!await tokens.TryAcceptAsync(token.Id, accountId, now, cancellationToken))
+        {
+            throw new ConflictException("The code has already been used.");
         }
 
         User accountForSession;
-        if (string.Equals(token.Role, "self", StringComparison.OrdinalIgnoreCase))
+        if (isSelf)
         {
             accountForSession = await users.GetByIdAsync(token.UserId, cancellationToken)
                 ?? throw new NotFoundException("The token owner no longer exists.");
         }
         else
         {
-            var accountId = Guid.NewGuid();
             accountForSession = new User(
                 accountId,
                 "Cuidador",
                 $"caregiver+{accountId:N}@device.anxietywatch.internal",
                 Guid.NewGuid().ToString("N"),
-                "free");
+                "free",
+                token.Role);
             await users.AddAsync(accountForSession, cancellationToken);
         }
-
-        token.Accept(accountForSession.Id, clock.UtcNow);
-        await tokens.UpdateAsync(token, cancellationToken);
 
         var jwt = jwtTokenService.Create(
             accountForSession.Id,

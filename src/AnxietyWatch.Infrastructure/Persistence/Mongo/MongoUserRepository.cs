@@ -46,6 +46,7 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
             .Set("email", user.Email.ToLowerInvariant())
             .Set("passwordHash", user.PasswordHash)
             .Set("planId", user.PlanId)
+            .Set("role", user.Role)
             .Set("emailVerified", user.EmailVerified)
             .Set("lastVerificationEmailSentAt", NullableDate(user.LastVerificationEmailSentAt))
             .Set("avatarUrl", NullableString(user.AvatarUrl))
@@ -295,6 +296,7 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
             ["email"] = user.Email.ToLowerInvariant(),
             ["passwordHash"] = user.PasswordHash,
             ["planId"] = user.PlanId,
+            ["role"] = user.Role,
             ["emailVerified"] = user.EmailVerified,
             ["anxietyThreshold"] = user.AnxietyThreshold,
             ["pushNotifications"] = user.PushNotifications,
@@ -327,7 +329,8 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
         ReadDate(document, "firstFailedLoginAt"),
         ReadDate(document, "lockoutUntil"),
         document.GetValue("version", 0L).ToInt64(),
-        document.GetValue("securityVersion", 0L).ToInt64());
+        document.GetValue("securityVersion", 0L).ToInt64(),
+        document.GetValue("role", "patient").AsString);
 
     private static void AddOptional(BsonDocument document, string name, DateTimeOffset? value)
     {
