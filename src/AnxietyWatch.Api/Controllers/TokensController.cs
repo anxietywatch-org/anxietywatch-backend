@@ -46,6 +46,14 @@ public sealed class TokensController(ISender sender) : ControllerBase
     }
 
     [Authorize]
+    [HttpPost("{id:guid}/revoke")]
+    public async Task<IActionResult> Revoke(Guid id, CancellationToken cancellationToken)
+    {
+        await sender.Send(new RevokeTokenCommand(id), cancellationToken);
+        return Ok(new { success = true });
+    }
+
+    [Authorize]
     [HttpPost("{id:guid}/accept")]
     public async Task<ActionResult<object>> Accept(
         Guid id,
