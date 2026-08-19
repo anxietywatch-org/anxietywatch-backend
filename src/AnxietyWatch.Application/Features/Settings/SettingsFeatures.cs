@@ -6,9 +6,25 @@ using MediatR;
 
 namespace AnxietyWatch.Application.Features.Settings;
 
-public sealed record UpdateProfileCommand(string FullName, string? AvatarUrl) : IRequest<ProfileResponse>;
+public sealed record UpdateProfileCommand(
+    string FullName,
+    string? AvatarUrl,
+    string? Allergies = null,
+    string? CurrentMedications = null,
+    string? EmergencyContactName = null,
+    string? EmergencyContactPhone = null,
+    bool? PreviousAnxietyDiagnosis = null,
+    string? TreatingProfessional = null) : IRequest<ProfileResponse>;
 
-public sealed record ProfileResponse(string FullName, string? AvatarUrl);
+public sealed record ProfileResponse(
+    string FullName,
+    string? AvatarUrl,
+    string? Allergies,
+    string? CurrentMedications,
+    string? EmergencyContactName,
+    string? EmergencyContactPhone,
+    bool? PreviousAnxietyDiagnosis,
+    string? TreatingProfessional);
 
 public sealed record GetProfileQuery : IRequest<ProfileResponse>;
 
@@ -18,7 +34,7 @@ public sealed class GetProfileQueryHandler(ICurrentUser currentUser, IUserReposi
     public async Task<ProfileResponse> Handle(GetProfileQuery request, CancellationToken cancellationToken)
     {
         var user = await UpdateProfileCommandHandler.RequireUser(currentUser, users, cancellationToken);
-        return new ProfileResponse(user.FullName, user.AvatarUrl);
+        return UpdateProfileCommandHandler.ToResponse(user);
     }
 }
 
@@ -28,6 +44,11 @@ public sealed class UpdateProfileCommandValidator : AbstractValidator<UpdateProf
     {
         RuleFor(command => command.FullName).NotEmpty().Length(2, 60);
         RuleFor(command => command.AvatarUrl).MaximumLength(2048);
+        RuleFor(command => command.Allergies).MaximumLength(1000);
+        RuleFor(command => command.CurrentMedications).MaximumLength(2000);
+        RuleFor(command => command.EmergencyContactName).MaximumLength(120);
+        RuleFor(command => command.EmergencyContactPhone).MaximumLength(40);
+        RuleFor(command => command.TreatingProfessional).MaximumLength(200);
     }
 }
 
@@ -38,9 +59,26 @@ public sealed class UpdateProfileCommandHandler(ICurrentUser currentUser, IUserR
     {
         var user = await RequireUser(currentUser, users, cancellationToken);
         user.UpdateProfile(command.FullName.Trim(), command.AvatarUrl);
+        user.UpdateMedicalProfile(
+            command.Allergies,
+            command.CurrentMedications,
+            command.EmergencyContactName,
+            command.EmergencyContactPhone,
+            command.PreviousAnxietyDiagnosis,
+            command.TreatingProfessional);
         await users.UpdateAsync(user, cancellationToken);
-        return new ProfileResponse(user.FullName, user.AvatarUrl);
+        return ToResponse(user);
     }
+
+    internal static ProfileResponse ToResponse(User user) => new(
+        user.FullName,
+        user.AvatarUrl,
+        user.Allergies,
+        user.CurrentMedications,
+        user.EmergencyContactName,
+        user.EmergencyContactPhone,
+        user.PreviousAnxietyDiagnosis,
+        user.TreatingProfessional);
 
     internal static async Task<User> RequireUser(
         ICurrentUser currentUser,

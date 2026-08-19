@@ -10,6 +10,8 @@ public sealed class MongoWearableSyncRepository(MongoContext context) : IWearabl
     private readonly IMongoCollection<BsonDocument> telemetry = context.Database.GetCollection<BsonDocument>("telemetry_batches");
     private readonly IMongoCollection<BsonDocument> sosEvents = context.Database.GetCollection<BsonDocument>("sos_events");
     private readonly IMongoCollection<BsonDocument> sosCancellations = context.Database.GetCollection<BsonDocument>("sos_cancellations");
+    private readonly IMongoCollection<BsonDocument> suspectedEvents = context.Database.GetCollection<BsonDocument>("suspected_events");
+    private readonly IMongoCollection<BsonDocument> eventDecisions = context.Database.GetCollection<BsonDocument>("event_decisions");
 
     public Task<bool> TryStoreTelemetryAsync(Guid userId, TelemetryBatchRequest batch, CancellationToken cancellationToken = default) =>
         TryInsertAsync(telemetry, batch.BatchId, userId, batch, cancellationToken);
@@ -19,6 +21,12 @@ public sealed class MongoWearableSyncRepository(MongoContext context) : IWearabl
 
     public Task<bool> TryStoreSosCancellationAsync(Guid userId, SosCancelRequest cancellation, CancellationToken cancellationToken = default) =>
         TryInsertAsync(sosCancellations, cancellation.EventId, userId, cancellation, cancellationToken);
+
+    public Task<bool> TryStoreSuspectedEventAsync(Guid userId, SuspectedEventRequest suspectedEvent, CancellationToken cancellationToken = default) =>
+        TryInsertAsync(suspectedEvents, suspectedEvent.EventId, userId, suspectedEvent, cancellationToken);
+
+    public Task<bool> TryStoreEventDecisionAsync(Guid userId, EventDecisionRequest decision, CancellationToken cancellationToken = default) =>
+        TryInsertAsync(eventDecisions, decision.EventId, userId, decision, cancellationToken);
 
     private static async Task<bool> TryInsertAsync<T>(
         IMongoCollection<BsonDocument> collection,

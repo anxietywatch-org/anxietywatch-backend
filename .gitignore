@@ -31,3 +31,6 @@ Thumbs.db
 /AnxietyWatch.UnitTest/
 /AnxietyWatch.IntegrationTest/
 /AnxietyWatch.SecurityTest/
+
+# Working reports produced by AI sessions (not committed)
+/informes/

@@ -143,6 +143,35 @@ public sealed class DeleteTokenCommandHandler(ICurrentUser currentUser, ILinkTok
     }
 }
 
+public sealed record RevokeTokenCommand(Guid Id) : IRequest<bool>;
+
+public sealed class RevokeTokenCommandHandler(ICurrentUser currentUser, ILinkTokenRepository tokens)
+    : IRequestHandler<RevokeTokenCommand, bool>
+{
+    public async Task<bool> Handle(RevokeTokenCommand command, CancellationToken cancellationToken)
+    {
+        CreateTokenCommandHandler.RequireAuthenticatedUser(currentUser);
+        var token = await tokens.GetByIdAsync(command.Id, cancellationToken)
+            ?? throw new NotFoundException("Token not found.");
+        if (token.UserId != currentUser.UserId)
+        {
+            throw new ForbiddenException("The token does not belong to the authenticated user.");
+        }
+
+        if (token.Status != TokenStatus.Accepted)
+        {
+            throw new ConflictException("Only an accepted token can be revoked.");
+        }
+
+        if (!await tokens.TryRevokeAsync(command.Id, cancellationToken))
+        {
+            throw new ConflictException("The token state changed before the request completed.");
+        }
+
+        return true;
+    }
+}
+
 public sealed record AcceptTokenCommand(Guid Id, string DeviceId) : IRequest<string>;
 
 public sealed class AcceptTokenCommandValidator : AbstractValidator<AcceptTokenCommand>
@@ -161,13 +190,28 @@ public sealed class AcceptTokenCommandHandler(
         CreateTokenCommandHandler.RequireAuthenticatedUser(currentUser);
         var token = await tokens.GetByIdAsync(command.Id, cancellationToken)
             ?? throw new NotFoundException("Token not found.");
-        if (token.Status != TokenStatus.Pending || token.ExpiresAt <= clock.UtcNow)
+
+        if (token.Status == TokenStatus.Accepted)
         {
-            throw new ConflictException("The token is expired or has already been used.");
+            throw new ConflictException("The token has already been used.");
         }
 
-        token.Accept(currentUser.UserId, clock.UtcNow);
-        await tokens.UpdateAsync(token, cancellationToken);
+        if (token.Status is TokenStatus.Deleted or TokenStatus.Expired)
+        {
+            throw new ConflictException("The token is no longer available.");
+        }
+
+        var now = clock.UtcNow;
+        if (token.ExpiresAt <= now)
+        {
+            throw new GoneException("The token has expired.");
+        }
+
+        if (!await tokens.TryAcceptAsync(command.Id, currentUser.UserId, now, cancellationToken))
+        {
+            throw new ConflictException("The token has already been used.");
+        }
+
         return "accepted";
     }
 }

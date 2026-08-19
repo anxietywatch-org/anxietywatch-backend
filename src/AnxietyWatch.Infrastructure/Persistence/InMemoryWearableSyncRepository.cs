@@ -8,6 +8,8 @@ public sealed class InMemoryWearableSyncRepository : IWearableSyncRepository
     private readonly ConcurrentDictionary<Guid, byte> telemetryIds = new();
     private readonly ConcurrentDictionary<Guid, byte> sosIds = new();
     private readonly ConcurrentDictionary<Guid, byte> sosCancellationIds = new();
+    private readonly ConcurrentDictionary<Guid, byte> suspectedEventIds = new();
+    private readonly ConcurrentDictionary<Guid, byte> eventDecisionIds = new();
 
     public Task<bool> TryStoreTelemetryAsync(Guid userId, TelemetryBatchRequest batch, CancellationToken cancellationToken = default) =>
         Task.FromResult(telemetryIds.TryAdd(batch.BatchId, 0));
@@ -17,4 +19,10 @@ public sealed class InMemoryWearableSyncRepository : IWearableSyncRepository
 
     public Task<bool> TryStoreSosCancellationAsync(Guid userId, SosCancelRequest cancellation, CancellationToken cancellationToken = default) =>
         Task.FromResult(sosCancellationIds.TryAdd(cancellation.EventId, 0));
+
+    public Task<bool> TryStoreSuspectedEventAsync(Guid userId, SuspectedEventRequest suspectedEvent, CancellationToken cancellationToken = default) =>
+        Task.FromResult(suspectedEventIds.TryAdd(suspectedEvent.EventId, 0));
+
+    public Task<bool> TryStoreEventDecisionAsync(Guid userId, EventDecisionRequest decision, CancellationToken cancellationToken = default) =>
+        Task.FromResult(eventDecisionIds.TryAdd(decision.EventId, 0));
 }

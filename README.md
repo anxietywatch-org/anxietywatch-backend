@@ -265,7 +265,20 @@ Descarga `tokens.csv` (`text/csv`).
 
 #### GET /api/profile — 200
 
-Devuelve `{ "fullName": "...", "avatarUrl": null }` con los valores actuales.
+Devuelve los valores actuales del perfil. Los campos médicos son opcionales (`null` si no se han configurado):
+
+```json
+{
+  "fullName": "Ana Pérez",
+  "avatarUrl": null,
+  "allergies": null,
+  "currentMedications": null,
+  "emergencyContactName": null,
+  "emergencyContactPhone": null,
+  "previousAnxietyDiagnosis": null,
+  "treatingProfessional": null
+}
+```
 
 #### PATCH /api/profile — 200
 
@@ -273,7 +286,7 @@ Devuelve `{ "fullName": "...", "avatarUrl": null }` con los valores actuales.
 { "fullName": "Ana Pérez", "avatarUrl": null }
 ```
 
-Responde `{ "fullName": "...", "avatarUrl": null }`.
+Todos los campos son opcionales en la petición. Campos médicos admitidos: `allergies`, `currentMedications`, `emergencyContactName`, `emergencyContactPhone`, `previousAnxietyDiagnosis` (bool), `treatingProfessional`. Responde con el JSON completo igual al GET.
 
 #### GET /api/settings — 200
 
@@ -286,6 +299,32 @@ Devuelve `{ "anxietyThreshold": 70, "pushNotifications": true, "privateMode": fa
 ```
 
 Responde `{ "anxietyThreshold": 70, "pushNotifications": true, "privateMode": false }`. `403` si `privateMode: true` en plan `free`.
+
+### Dispositivos y notificaciones push (protegido)
+
+#### POST /api/devices/register — 200
+
+Registra el token de notificaciones push del dispositivo (p. ej. token FCM) en la cuenta autenticada. Idempotente por token.
+
+```json
+{ "platform": "android", "token": "fcm-token-del-dispositivo" }
+```
+
+`platform`: `android` | `ios` | `web`. Responde `{ "id": "...", "platform": "...", "token": "...", "registeredAt": "..." }`.
+
+#### POST /api/devices/unregister — 200
+
+```json
+{ "token": "fcm-token-del-dispositivo" }
+```
+
+Responde `{ "success": true }`.
+
+#### GET /api/devices — 200
+
+Lista los tokens registrados de la cuenta autenticada.
+
+Cuando un paciente activa `POST /api/v1/sos/trigger`, el backend detecta a los cuidadores vinculados mediante tokens aceptados y despacha una alerta a sus dispositivos registrados. Sin `Push:WebhookUrl` configurado, el envío es un log (no-op) y nunca altera la aceptación del SOS.
 
 ### Contenido
 

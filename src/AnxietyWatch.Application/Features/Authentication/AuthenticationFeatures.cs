@@ -17,7 +17,8 @@ public sealed record UserResponse(
     string Email,
     string PlanId,
     bool EmailVerified,
-    string? AvatarUrl = null);
+    string? AvatarUrl = null,
+    string Role = "patient");
 
 public sealed record AuthenticationResponse(
     string Token,
@@ -142,7 +143,7 @@ public sealed class RegisterCommandHandler(
         new(token.AccessToken, token.ExpiresAt, ToResponse(user));
 
     internal static UserResponse ToResponse(User user) =>
-        new(user.Id.ToString(), user.FullName, user.Email, user.PlanId, user.EmailVerified, user.AvatarUrl);
+        new(user.Id.ToString(), user.FullName, user.Email, user.PlanId, user.EmailVerified, user.AvatarUrl, user.Role);
 }
 
 public sealed record LoginCommand(string Email, string Password) : IRequest<AuthenticationResponse>;

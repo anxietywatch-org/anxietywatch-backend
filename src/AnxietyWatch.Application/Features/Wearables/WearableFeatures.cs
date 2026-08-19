@@ -1,3 +1,4 @@
+using AnxietyWatch.Application.Abstractions.Notifications;
 using AnxietyWatch.Application.Abstractions.Security;
 using AnxietyWatch.Application.Common;
 using FluentValidation;
@@ -43,6 +44,48 @@ public sealed record SosCancelRequest(
     DateTimeOffset CancelledAt,
     string? Reason);
 
+public sealed record SuspectedEventFeaturesRequest(
+    double? HeartRateMean,
+    double? HeartRateMax,
+    double? HeartRateSlopeBpmPerMinute,
+    double? HeartRateDeltaFromBaseline,
+    double? RmssdMillis,
+    double? SdnnMillis,
+    double? MovementMagnitudeMean,
+    double? MovementVariance,
+    double ValidSampleRatio,
+    long LastSampleAgeSeconds,
+    int SampleCount);
+
+public sealed record SuspectedEventBaselineRequest(
+    long SampleCount,
+    double MeanHeartRate,
+    double HeartRateM2,
+    long UpdatedAtEpochMillis);
+
+public sealed record SuspectedEventRequest(
+    Guid EventId,
+    Guid DeviceId,
+    Guid? UserId,
+    Guid SessionId,
+    long Sequence,
+    DateTimeOffset DetectedAt,
+    string State,
+    double Score,
+    string RulesVersion,
+    SuspectedEventFeaturesRequest Features,
+    SuspectedEventBaselineRequest Baseline);
+
+public sealed record EventDecisionRequest(
+    Guid EventId,
+    Guid DeviceId,
+    Guid? UserId,
+    Guid SessionId,
+    long Sequence,
+    DateTimeOffset DetectedAt,
+    DateTimeOffset RespondedAt,
+    string Response);
+
 public sealed record SubmissionResponse(Guid Id, bool Accepted, bool Duplicate);
 
 public interface IWearableSyncRepository
@@ -50,6 +93,8 @@ public interface IWearableSyncRepository
     Task<bool> TryStoreTelemetryAsync(Guid userId, TelemetryBatchRequest batch, CancellationToken cancellationToken = default);
     Task<bool> TryStoreSosAsync(Guid userId, SosTriggerRequest trigger, CancellationToken cancellationToken = default);
     Task<bool> TryStoreSosCancellationAsync(Guid userId, SosCancelRequest cancellation, CancellationToken cancellationToken = default);
+    Task<bool> TryStoreSuspectedEventAsync(Guid userId, SuspectedEventRequest suspectedEvent, CancellationToken cancellationToken = default);
+    Task<bool> TryStoreEventDecisionAsync(Guid userId, EventDecisionRequest decision, CancellationToken cancellationToken = default);
 }
 
 public sealed record SubmitTelemetryBatchCommand(TelemetryBatchRequest Batch) : IRequest<SubmissionResponse>;
@@ -134,13 +179,19 @@ public sealed class TriggerSosCommandValidator : AbstractValidator<TriggerSosCom
 
 public sealed class TriggerSosCommandHandler(
     ICurrentUser currentUser,
-    IWearableSyncRepository repository)
+    IWearableSyncRepository repository,
+    ICaregiverAlertDispatcher alertDispatcher)
     : IRequestHandler<TriggerSosCommand, SubmissionResponse>
 {
     public async Task<SubmissionResponse> Handle(TriggerSosCommand command, CancellationToken cancellationToken)
     {
         var userId = SubmitTelemetryBatchCommandHandler.RequireMatchingUser(currentUser, command.Trigger.UserId);
         var accepted = await repository.TryStoreSosAsync(userId, command.Trigger, cancellationToken);
+        if (accepted)
+        {
+            await alertDispatcher.DispatchSosAlertAsync(userId, command.Trigger.EventId, cancellationToken);
+        }
+
         return new SubmissionResponse(command.Trigger.EventId, accepted, !accepted);
     }
 }
@@ -173,5 +224,119 @@ public sealed class CancelSosCommandHandler(
             command.Cancellation,
             cancellationToken);
         return new SubmissionResponse(command.Cancellation.EventId, accepted, !accepted);
+    }
+}
+
+public sealed record SubmitSuspectedEventCommand(SuspectedEventRequest SuspectedEvent) : IRequest<SubmissionResponse>;
+
+public sealed class SuspectedEventFeaturesRequestValidator : AbstractValidator<SuspectedEventFeaturesRequest>
+{
+    public SuspectedEventFeaturesRequestValidator()
+    {
+        RuleFor(features => features.ValidSampleRatio).InclusiveBetween(0, 1);
+        RuleFor(features => features.LastSampleAgeSeconds).GreaterThanOrEqualTo(0);
+        RuleFor(features => features.SampleCount).GreaterThanOrEqualTo(0);
+        RuleFor(features => features.HeartRateSlopeBpmPerMinute).GreaterThanOrEqualTo(0)
+            .When(features => features.HeartRateSlopeBpmPerMinute.HasValue);
+        RuleFor(features => features.RmssdMillis).GreaterThanOrEqualTo(0)
+            .When(features => features.RmssdMillis.HasValue);
+        RuleFor(features => features.SdnnMillis).GreaterThanOrEqualTo(0)
+            .When(features => features.SdnnMillis.HasValue);
+    }
+}
+
+public sealed class SuspectedEventBaselineRequestValidator : AbstractValidator<SuspectedEventBaselineRequest>
+{
+    public SuspectedEventBaselineRequestValidator()
+    {
+        RuleFor(baseline => baseline.SampleCount).GreaterThanOrEqualTo(0);
+        RuleFor(baseline => baseline.MeanHeartRate).GreaterThanOrEqualTo(0);
+        RuleFor(baseline => baseline.HeartRateM2).GreaterThanOrEqualTo(0);
+        RuleFor(baseline => baseline.UpdatedAtEpochMillis).GreaterThanOrEqualTo(0);
+    }
+}
+
+public sealed class SubmitSuspectedEventCommandValidator : AbstractValidator<SubmitSuspectedEventCommand>
+{
+    public SubmitSuspectedEventCommandValidator()
+    {
+        RuleFor(command => command.SuspectedEvent.EventId).NotEmpty();
+        RuleFor(command => command.SuspectedEvent.DeviceId).NotEmpty();
+        RuleFor(command => command.SuspectedEvent.SessionId).NotEmpty();
+        RuleFor(command => command.SuspectedEvent.Sequence).GreaterThanOrEqualTo(0);
+        RuleFor(command => command.SuspectedEvent.DetectedAt).NotEmpty();
+        RuleFor(command => command.SuspectedEvent.State).NotEmpty().MaximumLength(64);
+        RuleFor(command => command.SuspectedEvent.Score).InclusiveBetween(0, 1);
+        RuleFor(command => command.SuspectedEvent.RulesVersion).NotEmpty().MaximumLength(64);
+        RuleFor(command => command.SuspectedEvent.Features).NotNull();
+        When(command => command.SuspectedEvent.Features is not null, () =>
+        {
+            RuleFor(command => command.SuspectedEvent.Features)
+                .SetValidator(new SuspectedEventFeaturesRequestValidator());
+        });
+        RuleFor(command => command.SuspectedEvent.Baseline).NotNull();
+        When(command => command.SuspectedEvent.Baseline is not null, () =>
+        {
+            RuleFor(command => command.SuspectedEvent.Baseline)
+                .SetValidator(new SuspectedEventBaselineRequestValidator());
+        });
+    }
+}
+
+public sealed class SubmitSuspectedEventCommandHandler(
+    ICurrentUser currentUser,
+    IWearableSyncRepository repository)
+    : IRequestHandler<SubmitSuspectedEventCommand, SubmissionResponse>
+{
+    public async Task<SubmissionResponse> Handle(SubmitSuspectedEventCommand command, CancellationToken cancellationToken)
+    {
+        var userId = SubmitTelemetryBatchCommandHandler.RequireMatchingUser(
+            currentUser,
+            command.SuspectedEvent.UserId);
+        var accepted = await repository.TryStoreSuspectedEventAsync(
+            userId,
+            command.SuspectedEvent,
+            cancellationToken);
+        return new SubmissionResponse(command.SuspectedEvent.EventId, accepted, !accepted);
+    }
+}
+
+public sealed record SubmitEventDecisionCommand(EventDecisionRequest Decision) : IRequest<SubmissionResponse>;
+
+public sealed class SubmitEventDecisionCommandValidator : AbstractValidator<SubmitEventDecisionCommand>
+{
+    private static readonly string[] PrimaryResponses = ["ACTIVITY_CONFIRMED", "USER_OK", "SUPPORT_REQUESTED"];
+
+    public SubmitEventDecisionCommandValidator()
+    {
+        RuleFor(command => command.Decision.EventId).NotEmpty();
+        RuleFor(command => command.Decision.DeviceId).NotEmpty();
+        RuleFor(command => command.Decision.SessionId).NotEmpty();
+        RuleFor(command => command.Decision.Sequence).GreaterThanOrEqualTo(0);
+        RuleFor(command => command.Decision.DetectedAt).NotEmpty();
+        RuleFor(command => command.Decision.RespondedAt).NotEmpty();
+        RuleFor(command => command.Decision.Response)
+            .Must(response => PrimaryResponses.Contains(response, StringComparer.OrdinalIgnoreCase));
+        RuleFor(command => command.Decision)
+            .Must(decision => decision.RespondedAt >= decision.DetectedAt)
+            .WithMessage("respondedAt must be greater than or equal to detectedAt.");
+    }
+}
+
+public sealed class SubmitEventDecisionCommandHandler(
+    ICurrentUser currentUser,
+    IWearableSyncRepository repository)
+    : IRequestHandler<SubmitEventDecisionCommand, SubmissionResponse>
+{
+    public async Task<SubmissionResponse> Handle(SubmitEventDecisionCommand command, CancellationToken cancellationToken)
+    {
+        var userId = SubmitTelemetryBatchCommandHandler.RequireMatchingUser(
+            currentUser,
+            command.Decision.UserId);
+        var accepted = await repository.TryStoreEventDecisionAsync(
+            userId,
+            command.Decision,
+            cancellationToken);
+        return new SubmissionResponse(command.Decision.EventId, accepted, !accepted);
     }
 }

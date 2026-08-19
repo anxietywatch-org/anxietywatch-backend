@@ -39,4 +39,24 @@ public sealed class WearableController(ISender sender) : ControllerBase
         return StatusCode(result.Accepted ? StatusCodes.Status202Accepted : StatusCodes.Status200OK,
             new { eventId = result.Id, result.Accepted, result.Duplicate });
     }
+
+    [HttpPost("events/suspected")]
+    public async Task<ActionResult<object>> SubmitSuspectedEvent(
+        SuspectedEventRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(new SubmitSuspectedEventCommand(request), cancellationToken);
+        return StatusCode(result.Accepted ? StatusCodes.Status202Accepted : StatusCodes.Status200OK,
+            new { eventId = result.Id, result.Accepted, result.Duplicate });
+    }
+
+    [HttpPost("events/decision")]
+    public async Task<ActionResult<object>> SubmitEventDecision(
+        EventDecisionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(new SubmitEventDecisionCommand(request), cancellationToken);
+        return StatusCode(result.Accepted ? StatusCodes.Status202Accepted : StatusCodes.Status200OK,
+            new { eventId = result.Id, result.Accepted, result.Duplicate });
+    }
 }

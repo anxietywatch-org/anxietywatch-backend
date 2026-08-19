@@ -63,6 +63,8 @@ public sealed class AuthenticationEndpointTests(CustomWebApplicationFactory fact
         session!.Token.Should().NotBeNullOrWhiteSpace();
         session.User.Email.Should().Be(email);
         session.User.PlanId.Should().Be("free");
+        session.User.Role.Should().Be("patient");
+        registration!.User.Role.Should().Be("patient");
     }
 
     [Fact]
@@ -352,7 +354,14 @@ public sealed class AuthenticationEndpointTests(CustomWebApplicationFactory fact
 
     private sealed record AuthResponse(string Token, UserResponse User);
 
-    private sealed record UserResponse(string Id, string FullName, string Email, string PlanId, bool EmailVerified);
+    private sealed record UserResponse(
+        string Id,
+        string FullName,
+        string Email,
+        string PlanId,
+        bool EmailVerified,
+        string? AvatarUrl = null,
+        string Role = "patient");
     private sealed record VerificationStatusResponse(bool EmailVerified);
     private sealed record MessageResponse(string Message);
     private sealed record ProblemResponse(string Title, int Status);

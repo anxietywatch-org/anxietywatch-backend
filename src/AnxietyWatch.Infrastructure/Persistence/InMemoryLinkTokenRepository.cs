@@ -57,6 +57,56 @@ public sealed class InMemoryLinkTokenRepository : ILinkTokenRepository
         }
     }
 
+    public Task<bool> TryAcceptAsync(
+        Guid id,
+        Guid acceptedBy,
+        DateTimeOffset acceptedAt,
+        CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            if (!tokens.TryGetValue(id, out var current) ||
+                current.Status != TokenStatus.Pending ||
+                current.ExpiresAt <= acceptedAt)
+            {
+                return Task.FromResult(false);
+            }
+
+            tokens[id] = LinkToken.Restore(
+                current.Id,
+                current.UserId,
+                current.Code,
+                current.Role,
+                current.ExpiresAt,
+                TokenStatus.Accepted,
+                acceptedBy,
+                acceptedAt);
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<bool> TryRevokeAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            if (!tokens.TryGetValue(id, out var current) || current.Status != TokenStatus.Accepted)
+            {
+                return Task.FromResult(false);
+            }
+
+            tokens[id] = LinkToken.Restore(
+                current.Id,
+                current.UserId,
+                current.Code,
+                current.Role,
+                current.ExpiresAt,
+                TokenStatus.Deleted,
+                current.AcceptedBy,
+                current.AcceptedAt);
+            return Task.FromResult(true);
+        }
+    }
+
     public Task UpdateAsync(LinkToken token, CancellationToken cancellationToken = default)
     {
         lock (gate)

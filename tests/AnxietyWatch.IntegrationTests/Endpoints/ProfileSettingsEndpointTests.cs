@@ -17,7 +17,7 @@ public sealed class ProfileSettingsEndpointTests(CustomWebApplicationFactory fac
         var initialProfile = await client.GetFromJsonAsync<ProfileResponse>("/api/profile");
         var initialSettings = await client.GetFromJsonAsync<SettingsResponse>("/api/settings");
 
-        initialProfile.Should().Be(new ProfileResponse("Profile Settings User", null));
+        initialProfile.Should().Be(new ProfileResponse("Profile Settings User", null, null, null, null, null, null, null));
         initialSettings.Should().Be(new SettingsResponse(70, true, false));
 
         var profileResponse = await client.PatchAsJsonAsync("/api/profile", new
@@ -35,9 +35,60 @@ public sealed class ProfileSettingsEndpointTests(CustomWebApplicationFactory fac
         profileResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         settingsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         (await client.GetFromJsonAsync<ProfileResponse>("/api/profile"))
-            .Should().Be(new ProfileResponse("Updated User", "https://example.test/avatar.png"));
+            .Should().Be(new ProfileResponse("Updated User", "https://example.test/avatar.png", null, null, null, null, null, null));
         (await client.GetFromJsonAsync<SettingsResponse>("/api/settings"))
             .Should().Be(new SettingsResponse(55, false, false));
+    }
+
+    [Fact]
+    public async Task Profile_ShouldRoundTripMedicalFields()
+    {
+        using var client = await CreateAuthenticatedClient();
+
+        var response = await client.PatchAsJsonAsync("/api/profile", new
+        {
+            fullName = "Medical User",
+            avatarUrl = (string?)null,
+            allergies = "Penicilina",
+            currentMedications = "Escitalopram",
+            emergencyContactName = "Madre",
+            emergencyContactPhone = "+525512345678",
+            previousAnxietyDiagnosis = true,
+            treatingProfessional = "Dra. López"
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var profile = await client.GetFromJsonAsync<ProfileResponse>("/api/profile");
+        profile.Should().Be(new ProfileResponse(
+            "Medical User",
+            null,
+            "Penicilina",
+            "Escitalopram",
+            "Madre",
+            "+525512345678",
+            true,
+            "Dra. López"));
+    }
+
+    [Fact]
+    public async Task Profile_ShouldKeepExistingFieldsWhenMedicalFieldsAreOmitted()
+    {
+        using var client = await CreateAuthenticatedClient();
+
+        (await client.PatchAsJsonAsync("/api/profile", new
+        {
+            fullName = "Only Name",
+            avatarUrl = (string?)null,
+            allergies = "Polen"
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.PatchAsJsonAsync("/api/profile", new
+        {
+            fullName = "Only Name",
+            avatarUrl = (string?)null
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var profile = await client.GetFromJsonAsync<ProfileResponse>("/api/profile");
+        profile.Should().Be(new ProfileResponse("Only Name", null, null, null, null, null, null, null));
     }
 
     [Fact]
@@ -68,6 +119,14 @@ public sealed class ProfileSettingsEndpointTests(CustomWebApplicationFactory fac
     }
 
     private sealed record AuthResponse(string Token);
-    private sealed record ProfileResponse(string FullName, string? AvatarUrl);
+    private sealed record ProfileResponse(
+        string FullName,
+        string? AvatarUrl,
+        string? Allergies,
+        string? CurrentMedications,
+        string? EmergencyContactName,
+        string? EmergencyContactPhone,
+        bool? PreviousAnxietyDiagnosis,
+        string? TreatingProfessional);
     private sealed record SettingsResponse(int AnxietyThreshold, bool PushNotifications, bool PrivateMode);
 }

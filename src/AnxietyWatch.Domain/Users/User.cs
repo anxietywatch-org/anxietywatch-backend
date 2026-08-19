@@ -8,13 +8,14 @@ public sealed class User : AggregateRoot
     {
     }
 
-    public User(Guid id, string fullName, string email, string passwordHash, string planId)
+    public User(Guid id, string fullName, string email, string passwordHash, string planId, string role = "patient")
         : base(id)
     {
         FullName = fullName;
         Email = email;
         PasswordHash = passwordHash;
         PlanId = planId;
+        Role = role;
     }
 
     public static User Restore(
@@ -33,9 +34,16 @@ public sealed class User : AggregateRoot
         DateTimeOffset? firstFailedLoginAt,
         DateTimeOffset? lockoutUntil,
         long version,
-        long securityVersion)
+        long securityVersion,
+        string role = "patient",
+        string? allergies = null,
+        string? currentMedications = null,
+        string? emergencyContactName = null,
+        string? emergencyContactPhone = null,
+        bool? previousAnxietyDiagnosis = null,
+        string? treatingProfessional = null)
     {
-        var user = new User(id, fullName, email, passwordHash, planId)
+        var user = new User(id, fullName, email, passwordHash, planId, role)
         {
             EmailVerified = emailVerified,
             LastVerificationEmailSentAt = lastVerificationEmailSentAt,
@@ -47,7 +55,13 @@ public sealed class User : AggregateRoot
             FirstFailedLoginAt = firstFailedLoginAt,
             LockoutUntil = lockoutUntil,
             Version = version,
-            SecurityVersion = securityVersion
+            SecurityVersion = securityVersion,
+            Allergies = allergies,
+            CurrentMedications = currentMedications,
+            EmergencyContactName = emergencyContactName,
+            EmergencyContactPhone = emergencyContactPhone,
+            PreviousAnxietyDiagnosis = previousAnxietyDiagnosis,
+            TreatingProfessional = treatingProfessional
         };
 
         return user;
@@ -57,6 +71,7 @@ public sealed class User : AggregateRoot
     public string Email { get; private set; } = string.Empty;
     public string PasswordHash { get; private set; } = string.Empty;
     public string PlanId { get; private set; } = string.Empty;
+    public string Role { get; private set; } = string.Empty;
     public bool EmailVerified { get; private set; }
     public DateTimeOffset? LastVerificationEmailSentAt { get; private set; }
     public string? AvatarUrl { get; private set; }
@@ -68,6 +83,12 @@ public sealed class User : AggregateRoot
     public DateTimeOffset? LockoutUntil { get; private set; }
     public long Version { get; private set; }
     public long SecurityVersion { get; private set; }
+    public string? Allergies { get; private set; }
+    public string? CurrentMedications { get; private set; }
+    public string? EmergencyContactName { get; private set; }
+    public string? EmergencyContactPhone { get; private set; }
+    public bool? PreviousAnxietyDiagnosis { get; private set; }
+    public string? TreatingProfessional { get; private set; }
 
     public void RegisterFailedLogin(DateTimeOffset now)
     {
@@ -113,6 +134,22 @@ public sealed class User : AggregateRoot
     {
         FullName = fullName;
         AvatarUrl = avatarUrl;
+    }
+
+    public void UpdateMedicalProfile(
+        string? allergies,
+        string? currentMedications,
+        string? emergencyContactName,
+        string? emergencyContactPhone,
+        bool? previousAnxietyDiagnosis,
+        string? treatingProfessional)
+    {
+        Allergies = allergies;
+        CurrentMedications = currentMedications;
+        EmergencyContactName = emergencyContactName;
+        EmergencyContactPhone = emergencyContactPhone;
+        PreviousAnxietyDiagnosis = previousAnxietyDiagnosis;
+        TreatingProfessional = treatingProfessional;
     }
 
     public void ChangePlan(string planId) => PlanId = planId;
