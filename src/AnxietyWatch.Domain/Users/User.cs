@@ -35,7 +35,13 @@ public sealed class User : AggregateRoot
         DateTimeOffset? lockoutUntil,
         long version,
         long securityVersion,
-        string role = "patient")
+        string role = "patient",
+        string? allergies = null,
+        string? currentMedications = null,
+        string? emergencyContactName = null,
+        string? emergencyContactPhone = null,
+        bool? previousAnxietyDiagnosis = null,
+        string? treatingProfessional = null)
     {
         var user = new User(id, fullName, email, passwordHash, planId, role)
         {
@@ -49,7 +55,13 @@ public sealed class User : AggregateRoot
             FirstFailedLoginAt = firstFailedLoginAt,
             LockoutUntil = lockoutUntil,
             Version = version,
-            SecurityVersion = securityVersion
+            SecurityVersion = securityVersion,
+            Allergies = allergies,
+            CurrentMedications = currentMedications,
+            EmergencyContactName = emergencyContactName,
+            EmergencyContactPhone = emergencyContactPhone,
+            PreviousAnxietyDiagnosis = previousAnxietyDiagnosis,
+            TreatingProfessional = treatingProfessional
         };
 
         return user;
@@ -71,6 +83,12 @@ public sealed class User : AggregateRoot
     public DateTimeOffset? LockoutUntil { get; private set; }
     public long Version { get; private set; }
     public long SecurityVersion { get; private set; }
+    public string? Allergies { get; private set; }
+    public string? CurrentMedications { get; private set; }
+    public string? EmergencyContactName { get; private set; }
+    public string? EmergencyContactPhone { get; private set; }
+    public bool? PreviousAnxietyDiagnosis { get; private set; }
+    public string? TreatingProfessional { get; private set; }
 
     public void RegisterFailedLogin(DateTimeOffset now)
     {
@@ -116,6 +134,22 @@ public sealed class User : AggregateRoot
     {
         FullName = fullName;
         AvatarUrl = avatarUrl;
+    }
+
+    public void UpdateMedicalProfile(
+        string? allergies,
+        string? currentMedications,
+        string? emergencyContactName,
+        string? emergencyContactPhone,
+        bool? previousAnxietyDiagnosis,
+        string? treatingProfessional)
+    {
+        Allergies = allergies;
+        CurrentMedications = currentMedications;
+        EmergencyContactName = emergencyContactName;
+        EmergencyContactPhone = emergencyContactPhone;
+        PreviousAnxietyDiagnosis = previousAnxietyDiagnosis;
+        TreatingProfessional = treatingProfessional;
     }
 
     public void ChangePlan(string planId) => PlanId = planId;

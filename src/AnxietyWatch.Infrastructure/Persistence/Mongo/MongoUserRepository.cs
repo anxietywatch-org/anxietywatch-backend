@@ -57,6 +57,12 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
             .Set("firstFailedLoginAt", NullableDate(user.FirstFailedLoginAt))
             .Set("lockoutUntil", NullableDate(user.LockoutUntil))
             .Set("securityVersion", user.SecurityVersion)
+            .Set("allergies", NullableString(user.Allergies))
+            .Set("currentMedications", NullableString(user.CurrentMedications))
+            .Set("emergencyContactName", NullableString(user.EmergencyContactName))
+            .Set("emergencyContactPhone", NullableString(user.EmergencyContactPhone))
+            .Set("previousAnxietyDiagnosis", NullableBool(user.PreviousAnxietyDiagnosis))
+            .Set("treatingProfessional", NullableString(user.TreatingProfessional))
             .Inc("version", 1);
 
         var result = await Collection.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
@@ -310,6 +316,12 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
         AddOptional(document, "avatarUrl", user.AvatarUrl);
         AddOptional(document, "firstFailedLoginAt", user.FirstFailedLoginAt);
         AddOptional(document, "lockoutUntil", user.LockoutUntil);
+        AddOptional(document, "allergies", user.Allergies);
+        AddOptional(document, "currentMedications", user.CurrentMedications);
+        AddOptional(document, "emergencyContactName", user.EmergencyContactName);
+        AddOptional(document, "emergencyContactPhone", user.EmergencyContactPhone);
+        AddOptional(document, "previousAnxietyDiagnosis", user.PreviousAnxietyDiagnosis);
+        AddOptional(document, "treatingProfessional", user.TreatingProfessional);
         return document;
     }
 
@@ -330,7 +342,13 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
         ReadDate(document, "lockoutUntil"),
         document.GetValue("version", 0L).ToInt64(),
         document.GetValue("securityVersion", 0L).ToInt64(),
-        document.GetValue("role", "patient").AsString);
+        document.GetValue("role", "patient").AsString,
+        ReadString(document, "allergies"),
+        ReadString(document, "currentMedications"),
+        ReadString(document, "emergencyContactName"),
+        ReadString(document, "emergencyContactPhone"),
+        ReadNullableBool(document, "previousAnxietyDiagnosis"),
+        ReadString(document, "treatingProfessional"));
 
     private static void AddOptional(BsonDocument document, string name, DateTimeOffset? value)
     {
@@ -342,11 +360,19 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
         if (value is not null) document[name] = value;
     }
 
+    private static void AddOptional(BsonDocument document, string name, bool? value)
+    {
+        if (value is not null) document[name] = value.Value;
+    }
+
     private static BsonValue NullableDate(DateTimeOffset? value) =>
         value is null ? BsonNull.Value : Date(value.Value);
 
     private static BsonValue NullableString(string? value) =>
         value is null ? BsonNull.Value : new BsonString(value);
+
+    private static BsonValue NullableBool(bool? value) =>
+        value is null ? BsonNull.Value : new BsonBoolean(value.Value);
 
     private static BsonDateTime Date(DateTimeOffset value) => new(value.UtcDateTime);
 
@@ -357,4 +383,7 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
 
     private static string? ReadString(BsonDocument document, string name) =>
         document.TryGetValue(name, out var value) && !value.IsBsonNull ? value.AsString : null;
+
+    private static bool? ReadNullableBool(BsonDocument document, string name) =>
+        document.TryGetValue(name, out var value) && !value.IsBsonNull ? value.ToBoolean() : null;
 }

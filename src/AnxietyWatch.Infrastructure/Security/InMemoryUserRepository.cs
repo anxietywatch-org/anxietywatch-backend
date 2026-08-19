@@ -230,7 +230,13 @@ public sealed class InMemoryUserRepository : IUserRepository
         user.LockoutUntil,
         user.Version,
         user.SecurityVersion,
-        user.Role);
+        user.Role,
+        user.Allergies,
+        user.CurrentMedications,
+        user.EmergencyContactName,
+        user.EmergencyContactPhone,
+        user.PreviousAnxietyDiagnosis,
+        user.TreatingProfessional);
 
     private sealed record VerificationToken(Guid UserId, DateTimeOffset ExpiresAt);
 }
