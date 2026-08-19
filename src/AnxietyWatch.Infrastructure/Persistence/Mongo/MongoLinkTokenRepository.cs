@@ -97,6 +97,18 @@ public sealed class MongoLinkTokenRepository(MongoContext context) : ILinkTokenR
         return result.MatchedCount == 1;
     }
 
+    public async Task<bool> TryRevokeAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.And(
+            Builders<BsonDocument>.Filter.Eq("_id", id.ToString()),
+            Builders<BsonDocument>.Filter.Eq("status", Status(TokenStatus.Accepted)));
+        var update = Builders<BsonDocument>.Update
+            .Set("status", Status(TokenStatus.Deleted))
+            .Set("quotaActive", false);
+        var result = await Collection.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+        return result.MatchedCount == 1;
+    }
+
     public async Task UpdateAsync(LinkToken token, CancellationToken cancellationToken = default)
     {
         var idFilter = Builders<BsonDocument>.Filter.Eq("_id", token.Id.ToString());

@@ -34,12 +34,33 @@ public sealed class RevokeTokenCommandHandlerTests
             Guid.NewGuid(),
             DateTimeOffset.UtcNow);
         _tokens.GetByIdAsync(id, Arg.Any<CancellationToken>()).Returns(token);
+        _tokens.TryRevokeAsync(id, Arg.Any<CancellationToken>()).Returns(true);
 
         var result = await _handler.Handle(new RevokeTokenCommand(id), CancellationToken.None);
 
         result.Should().BeTrue();
-        token.Status.Should().Be(TokenStatus.Deleted);
-        await _tokens.Received(1).UpdateAsync(token, Arg.Any<CancellationToken>());
+        await _tokens.Received(1).TryRevokeAsync(id, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Handle_WhenRevokeFails_ShouldThrowConflict()
+    {
+        var id = Guid.NewGuid();
+        var token = LinkToken.Restore(
+            id,
+            _currentUser.UserId,
+            "AW-TEST-TEST-TEST",
+            "self",
+            DateTimeOffset.UtcNow.AddDays(30),
+            TokenStatus.Accepted,
+            Guid.NewGuid(),
+            DateTimeOffset.UtcNow);
+        _tokens.GetByIdAsync(id, Arg.Any<CancellationToken>()).Returns(token);
+        _tokens.TryRevokeAsync(id, Arg.Any<CancellationToken>()).Returns(false);
+
+        var act = async () => await _handler.Handle(new RevokeTokenCommand(id), CancellationToken.None);
+
+        await act.Should().ThrowAsync<ConflictException>();
     }
 
     [Fact]

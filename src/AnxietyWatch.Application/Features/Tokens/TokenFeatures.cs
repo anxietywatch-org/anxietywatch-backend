@@ -163,8 +163,11 @@ public sealed class RevokeTokenCommandHandler(ICurrentUser currentUser, ILinkTok
             throw new ConflictException("Only an accepted token can be revoked.");
         }
 
-        token.MarkDeleted();
-        await tokens.UpdateAsync(token, cancellationToken);
+        if (!await tokens.TryRevokeAsync(command.Id, cancellationToken))
+        {
+            throw new ConflictException("The token state changed before the request completed.");
+        }
+
         return true;
     }
 }
