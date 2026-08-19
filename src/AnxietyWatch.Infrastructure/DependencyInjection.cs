@@ -2,6 +2,7 @@ using AnxietyWatch.Domain.Plans;
 using AnxietyWatch.Domain.Users;
 using AnxietyWatch.Application.Features.Support;
 using AnxietyWatch.Infrastructure.Caching;
+using AnxietyWatch.Infrastructure.Notifications;
 using AnxietyWatch.Infrastructure.Persistence;
 using AnxietyWatch.Infrastructure.Persistence.Mongo;
 using AnxietyWatch.Infrastructure.Security;
@@ -51,6 +52,11 @@ public static class DependencyInjection
             services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IEmailSender, LoggingEmailSender>();
         }
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Time.ISystemClock, SystemClock>();
+        services.AddHttpClient<AnxietyWatch.Application.Abstractions.Notifications.IPushNotifier, PushNotifier>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+        services.AddSingleton<AnxietyWatch.Application.Abstractions.Notifications.ICaregiverAlertDispatcher, CaregiverAlertDispatcher>();
 
         if (string.Equals(configuration["Persistence:Provider"], "Mongo", StringComparison.OrdinalIgnoreCase))
         {
@@ -62,6 +68,7 @@ public static class DependencyInjection
             services.AddSingleton<IUserRepository, MongoUserRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, MongoEpisodeRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, MongoLinkTokenRepository>();
+            services.AddSingleton<AnxietyWatch.Domain.Devices.IDeviceTokenRepository, MongoDeviceTokenRepository>();
             services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IRevokedTokenStore, MongoRevokedTokenStore>();
             services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordResetTokenStore, MongoPasswordResetTokenStore>();
         }
@@ -74,6 +81,7 @@ public static class DependencyInjection
             services.AddSingleton<IUserRepository, InMemoryUserRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, InMemoryEpisodeRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, InMemoryLinkTokenRepository>();
+            services.AddSingleton<AnxietyWatch.Domain.Devices.IDeviceTokenRepository, InMemoryDeviceTokenRepository>();
             services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IRevokedTokenStore, InMemoryRevokedTokenStore>();
             services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordResetTokenStore, InMemoryPasswordResetTokenStore>();
         }

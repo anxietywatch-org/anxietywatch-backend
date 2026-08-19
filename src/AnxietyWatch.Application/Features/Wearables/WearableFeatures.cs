@@ -1,3 +1,4 @@
+using AnxietyWatch.Application.Abstractions.Notifications;
 using AnxietyWatch.Application.Abstractions.Security;
 using AnxietyWatch.Application.Common;
 using FluentValidation;
@@ -178,13 +179,19 @@ public sealed class TriggerSosCommandValidator : AbstractValidator<TriggerSosCom
 
 public sealed class TriggerSosCommandHandler(
     ICurrentUser currentUser,
-    IWearableSyncRepository repository)
+    IWearableSyncRepository repository,
+    ICaregiverAlertDispatcher alertDispatcher)
     : IRequestHandler<TriggerSosCommand, SubmissionResponse>
 {
     public async Task<SubmissionResponse> Handle(TriggerSosCommand command, CancellationToken cancellationToken)
     {
         var userId = SubmitTelemetryBatchCommandHandler.RequireMatchingUser(currentUser, command.Trigger.UserId);
         var accepted = await repository.TryStoreSosAsync(userId, command.Trigger, cancellationToken);
+        if (accepted)
+        {
+            await alertDispatcher.DispatchSosAlertAsync(userId, command.Trigger.EventId, cancellationToken);
+        }
+
         return new SubmissionResponse(command.Trigger.EventId, accepted, !accepted);
     }
 }

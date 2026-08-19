@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using AnxietyWatch.Application.Abstractions.Notifications;
 using AnxietyWatch.Application.Abstractions.Security;
 using AnxietyWatch.Application.Common;
 using Microsoft.AspNetCore.Hosting;
@@ -15,6 +16,7 @@ namespace AnxietyWatch.IntegrationTests.Infrastructure;
 public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 {
     public TestEmailSender EmailSender { get; } = new();
+    public TestPushNotifier PushNotifier { get; } = new();
 
     public async Task<HttpClient> CreateAuthenticatedClientAsync(string? email = null)
     {
@@ -50,6 +52,8 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<IEmailSender>();
             services.AddSingleton<IEmailSender>(EmailSender);
+            services.RemoveAll<IPushNotifier>();
+            services.AddSingleton<IPushNotifier>(PushNotifier);
         });
     }
 }
@@ -57,6 +61,25 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 public sealed record TestEmailMessage(string Recipient, string Subject, string HtmlBody);
 
 public sealed record AuthResponse(string Token);
+
+public sealed record PushMessage(string[] DeviceTokens, string Title, string Body);
+
+public sealed class TestPushNotifier : IPushNotifier
+{
+    private readonly ConcurrentQueue<PushMessage> messages = new();
+
+    public IReadOnlyCollection<PushMessage> Messages => messages.ToArray();
+
+    public Task NotifyAsync(
+        IReadOnlyCollection<string> deviceTokens,
+        string title,
+        string body,
+        CancellationToken cancellationToken = default)
+    {
+        messages.Enqueue(new PushMessage(deviceTokens.ToArray(), title, body));
+        return Task.CompletedTask;
+    }
+}
 
 public sealed class TestEmailSender : IEmailSender
 {
