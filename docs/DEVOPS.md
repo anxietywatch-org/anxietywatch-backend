@@ -65,7 +65,15 @@ Cors__AllowedOrigins=https://mangoon.xyz,https://anxietywatch-web-g5mjb.ondigita
 Email__Provider=Resend
 Email__Resend__ApiKey=<Resend API key>
 Email__From=AnxietyWatch <no-reply@mail.mangoon.xyz>
+Ml__Inference__BaseUrl=<HTTPS ML service URL>
+Ml__Inference__ApiKey=<managed secret>
+Ml__Inference__TelemetryLookbackSeconds=60
 ```
+
+Notes:
+- `Ml__Inference__BaseUrl` must use HTTPS.
+- `Ml__Inference__ApiKey` is a managed runtime secret; do not commit it.
+- The current v0.1.0 integration uses a 60-second lookback window.
 
 ## Smoke Test
 

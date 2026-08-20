@@ -17,6 +17,9 @@ services:
       Email__VerificationUrl: ${EMAIL_VERIFICATION_URL:-https://mangoon.xyz/verify-email}
       Email__PasswordResetUrl: ${EMAIL_PASSWORD_RESET_URL:-https://mangoon.xyz/reset-password}
       Push__WebhookUrl: ${PUSH_WEBHOOK_URL:-}
+      Ml__Inference__BaseUrl: ${ML_INFERENCE_BASE_URL:-}
+      Ml__Inference__ApiKey: ${ML_INFERENCE_API_KEY:-}
+      Ml__Inference__TelemetryLookbackSeconds: ${ML_INFERENCE_TELEMETRY_LOOKBACK_SECONDS:-60}
     ports:
       - "127.0.0.1:8080:8080"
     networks:
