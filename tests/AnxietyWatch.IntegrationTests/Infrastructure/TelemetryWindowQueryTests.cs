@@ -255,4 +255,26 @@ public abstract class TelemetryWindowQueryTests
         firstResult.Samples.Select(sample => sample.Timestamp).Should().Equal(T0.AddSeconds(10));
         secondResult.Samples.Select(sample => sample.Timestamp).Should().Equal(T0.AddSeconds(20));
     }
+
+    [Fact]
+    public async Task L_SameBatchIdAcrossUsers_IsRejectedGloballyAndOwnedByFirstUser()
+    {
+        var deviceId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var firstUser = Guid.NewGuid();
+        var secondUser = Guid.NewGuid();
+        var batchId = Guid.NewGuid();
+        var batch = Batch(
+            batchId, deviceId, sessionId, T0, T0.AddSeconds(30), 0,
+            Sample(T0.AddSeconds(10)));
+
+        (await Repository.TryStoreTelemetryAsync(firstUser, batch)).Should().BeTrue();
+        (await Repository.TryStoreTelemetryAsync(secondUser, batch)).Should().BeFalse();
+
+        var firstResult = await Repository.GetTelemetryWindowAsync(firstUser, deviceId, sessionId, T0, T0.AddSeconds(60));
+        var secondResult = await Repository.GetTelemetryWindowAsync(secondUser, deviceId, sessionId, T0, T0.AddSeconds(60));
+
+        firstResult.Samples.Select(sample => sample.Timestamp).Should().Equal(T0.AddSeconds(10));
+        secondResult.Samples.Should().BeEmpty();
+    }
 }

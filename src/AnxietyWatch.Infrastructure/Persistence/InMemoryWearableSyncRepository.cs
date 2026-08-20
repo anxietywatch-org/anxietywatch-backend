@@ -3,19 +3,18 @@ using AnxietyWatch.Application.Features.Wearables;
 
 namespace AnxietyWatch.Infrastructure.Persistence;
 
+public sealed record StoredTelemetryBatch(Guid UserId, TelemetryBatchRequest Batch);
+
 public sealed class InMemoryWearableSyncRepository : IWearableSyncRepository
 {
-    private readonly ConcurrentDictionary<Guid, ConcurrentDictionary<Guid, TelemetryBatchRequest>> telemetryBatches = new();
+    private readonly ConcurrentDictionary<Guid, StoredTelemetryBatch> telemetryBatches = new();
     private readonly ConcurrentDictionary<Guid, byte> sosIds = new();
     private readonly ConcurrentDictionary<Guid, byte> sosCancellationIds = new();
     private readonly ConcurrentDictionary<Guid, byte> suspectedEventIds = new();
     private readonly ConcurrentDictionary<Guid, byte> eventDecisionIds = new();
 
-    public Task<bool> TryStoreTelemetryAsync(Guid userId, TelemetryBatchRequest batch, CancellationToken cancellationToken = default)
-    {
-        var userBatches = telemetryBatches.GetOrAdd(userId, static _ => new ConcurrentDictionary<Guid, TelemetryBatchRequest>());
-        return Task.FromResult(userBatches.TryAdd(batch.BatchId, batch));
-    }
+    public Task<bool> TryStoreTelemetryAsync(Guid userId, TelemetryBatchRequest batch, CancellationToken cancellationToken = default) =>
+        Task.FromResult(telemetryBatches.TryAdd(batch.BatchId, new StoredTelemetryBatch(userId, batch)));
 
     public Task<bool> TryStoreSosAsync(Guid userId, SosTriggerRequest trigger, CancellationToken cancellationToken = default) =>
         Task.FromResult(sosIds.TryAdd(trigger.EventId, 0));
@@ -37,12 +36,12 @@ public sealed class InMemoryWearableSyncRepository : IWearableSyncRepository
         DateTimeOffset windowEnd,
         CancellationToken cancellationToken = default)
     {
-        var batches = new List<TelemetryBatchRequest>();
-        if (telemetryBatches.TryGetValue(userId, out var userBatches))
-        {
-            batches.AddRange(userBatches.Values
-                .Where(batch => batch.DeviceId == deviceId && batch.SessionId == sessionId));
-        }
+        var batches = telemetryBatches.Values
+            .Where(stored => stored.UserId == userId &&
+                             stored.Batch.DeviceId == deviceId &&
+                             stored.Batch.SessionId == sessionId)
+            .Select(stored => stored.Batch)
+            .ToList();
 
         return Task.FromResult(TelemetryWindowSelector.Select(batches, windowStart, windowEnd));
     }
