@@ -90,16 +90,16 @@ public sealed class SuspectedEventInferenceEndpointTests : IClassFixture<Inferen
     [Fact]
     public async Task NewEvent_IsAccepted_TelemetryRetrieved_MlCalledOnce()
     {
-        using var client = await factory.CreateAuthenticatedClientAsync();
+        using var authenticated = await factory.CreateAuthenticatedClientAsync();
         var deviceId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
         var eventId = Guid.NewGuid();
         var detectedAt = DateTimeOffset.UtcNow.AddSeconds(-5);
         factory.MlClient.EnqueueSuccess(prediction: 0, supportProbability: 0.2, threshold: 0.3);
 
-        (await client.PostAsJsonAsync("/api/v1/telemetry/batch", TelemetryBatch(deviceId, sessionId, detectedAt)))
+        (await authenticated.Client.PostAsJsonAsync("/api/v1/telemetry/batch", TelemetryBatch(deviceId, sessionId, detectedAt)))
             .StatusCode.Should().Be(HttpStatusCode.Accepted);
-        var response = await client.PostAsJsonAsync("/api/v1/events/suspected", SuspectedEvent(eventId, deviceId, sessionId, detectedAt));
+        var response = await authenticated.Client.PostAsJsonAsync("/api/v1/events/suspected", SuspectedEvent(eventId, deviceId, sessionId, detectedAt));
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
         factory.MlClient.CallCount.Should().Be(1);
@@ -109,7 +109,7 @@ public sealed class SuspectedEventInferenceEndpointTests : IClassFixture<Inferen
         request.SessionId.Should().Be(sessionId);
         request.DetectedAt.Should().Be(detectedAt);
 
-        var inference = (await factory.Inferences.GetInferenceAsync(eventId))!;
+        var inference = (await factory.Inferences.GetInferenceAsync(authenticated.UserId, eventId))!;
         inference.Status.Should().Be(EventInferenceStatus.Succeeded);
         inference.Prediction.Should().Be(0);
         inference.ModelVersion.Should().Be("v0.1.0");
@@ -119,23 +119,23 @@ public sealed class SuspectedEventInferenceEndpointTests : IClassFixture<Inferen
     [Fact]
     public async Task DuplicateEvent_ReturnsExistingResponse_NoAdditionalMlCall()
     {
-        using var client = await factory.CreateAuthenticatedClientAsync();
+        using var authenticated = await factory.CreateAuthenticatedClientAsync();
         var deviceId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
         var eventId = Guid.NewGuid();
         var detectedAt = DateTimeOffset.UtcNow.AddSeconds(-5);
         factory.MlClient.EnqueueSuccess();
 
-        (await client.PostAsJsonAsync("/api/v1/telemetry/batch", TelemetryBatch(deviceId, sessionId, detectedAt)))
+        (await authenticated.Client.PostAsJsonAsync("/api/v1/telemetry/batch", TelemetryBatch(deviceId, sessionId, detectedAt)))
             .StatusCode.Should().Be(HttpStatusCode.Accepted);
         var suspected = SuspectedEvent(eventId, deviceId, sessionId, detectedAt);
-        var first = await client.PostAsJsonAsync("/api/v1/events/suspected", suspected);
+        var first = await authenticated.Client.PostAsJsonAsync("/api/v1/events/suspected", suspected);
         first.StatusCode.Should().Be(HttpStatusCode.Accepted);
         var firstBody = await first.Content.ReadFromJsonAsync<EventSubmissionResponse>();
         firstBody!.Accepted.Should().BeTrue();
         firstBody.Duplicate.Should().BeFalse();
 
-        var second = await client.PostAsJsonAsync("/api/v1/events/suspected", suspected);
+        var second = await authenticated.Client.PostAsJsonAsync("/api/v1/events/suspected", suspected);
         second.StatusCode.Should().Be(HttpStatusCode.OK);
         var secondBody = await second.Content.ReadFromJsonAsync<EventSubmissionResponse>();
         secondBody!.Accepted.Should().BeFalse();
@@ -147,20 +147,20 @@ public sealed class SuspectedEventInferenceEndpointTests : IClassFixture<Inferen
     [Fact]
     public async Task PredictionOne_PreservedWithoutSosOrCaregiverDispatch()
     {
-        using var client = await factory.CreateAuthenticatedClientAsync();
+        using var authenticated = await factory.CreateAuthenticatedClientAsync();
         var deviceId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
         var eventId = Guid.NewGuid();
         var detectedAt = DateTimeOffset.UtcNow.AddSeconds(-5);
         factory.MlClient.EnqueueSuccess(prediction: 1, supportProbability: 0.95);
 
-        (await client.PostAsJsonAsync("/api/v1/telemetry/batch", TelemetryBatch(deviceId, sessionId, detectedAt)))
+        (await authenticated.Client.PostAsJsonAsync("/api/v1/telemetry/batch", TelemetryBatch(deviceId, sessionId, detectedAt)))
             .StatusCode.Should().Be(HttpStatusCode.Accepted);
-        var response = await client.PostAsJsonAsync("/api/v1/events/suspected", SuspectedEvent(eventId, deviceId, sessionId, detectedAt));
+        var response = await authenticated.Client.PostAsJsonAsync("/api/v1/events/suspected", SuspectedEvent(eventId, deviceId, sessionId, detectedAt));
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
         factory.PushNotifier.Messages.Should().BeEmpty();
-        var inference = (await factory.Inferences.GetInferenceAsync(eventId))!;
+        var inference = (await factory.Inferences.GetInferenceAsync(authenticated.UserId, eventId))!;
         inference.Status.Should().Be(EventInferenceStatus.Succeeded);
         inference.Prediction.Should().Be(1);
     }
@@ -173,19 +173,19 @@ public sealed class SuspectedEventInferenceEndpointTests : IClassFixture<Inferen
     [InlineData(MlInferenceFailureKind.Configuration)]
     public async Task MlFailure_EventStillAcceptedAndFailedPersisted(MlInferenceFailureKind kind)
     {
-        using var client = await factory.CreateAuthenticatedClientAsync();
+        using var authenticated = await factory.CreateAuthenticatedClientAsync();
         var deviceId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
         var eventId = Guid.NewGuid();
         var detectedAt = DateTimeOffset.UtcNow.AddSeconds(-5);
         factory.MlClient.EnqueueFailure(kind);
 
-        (await client.PostAsJsonAsync("/api/v1/telemetry/batch", TelemetryBatch(deviceId, sessionId, detectedAt)))
+        (await authenticated.Client.PostAsJsonAsync("/api/v1/telemetry/batch", TelemetryBatch(deviceId, sessionId, detectedAt)))
             .StatusCode.Should().Be(HttpStatusCode.Accepted);
-        var response = await client.PostAsJsonAsync("/api/v1/events/suspected", SuspectedEvent(eventId, deviceId, sessionId, detectedAt));
+        var response = await authenticated.Client.PostAsJsonAsync("/api/v1/events/suspected", SuspectedEvent(eventId, deviceId, sessionId, detectedAt));
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
-        var inference = (await factory.Inferences.GetInferenceAsync(eventId))!;
+        var inference = (await factory.Inferences.GetInferenceAsync(authenticated.UserId, eventId))!;
         inference.Status.Should().Be(EventInferenceStatus.Failed);
         inference.FailureKind.Should().Be(kind);
     }
@@ -193,19 +193,19 @@ public sealed class SuspectedEventInferenceEndpointTests : IClassFixture<Inferen
     [Fact]
     public async Task UnexpectedClientException_EventStillAcceptedWithGenericFailure()
     {
-        using var client = await factory.CreateAuthenticatedClientAsync();
+        using var authenticated = await factory.CreateAuthenticatedClientAsync();
         var deviceId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
         var eventId = Guid.NewGuid();
         var detectedAt = DateTimeOffset.UtcNow.AddSeconds(-5);
         factory.MlClient.EnqueueThrow(new InvalidOperationException("boom"));
 
-        (await client.PostAsJsonAsync("/api/v1/telemetry/batch", TelemetryBatch(deviceId, sessionId, detectedAt)))
+        (await authenticated.Client.PostAsJsonAsync("/api/v1/telemetry/batch", TelemetryBatch(deviceId, sessionId, detectedAt)))
             .StatusCode.Should().Be(HttpStatusCode.Accepted);
-        var response = await client.PostAsJsonAsync("/api/v1/events/suspected", SuspectedEvent(eventId, deviceId, sessionId, detectedAt));
+        var response = await authenticated.Client.PostAsJsonAsync("/api/v1/events/suspected", SuspectedEvent(eventId, deviceId, sessionId, detectedAt));
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
-        var inference = (await factory.Inferences.GetInferenceAsync(eventId))!;
+        var inference = (await factory.Inferences.GetInferenceAsync(authenticated.UserId, eventId))!;
         inference.Status.Should().Be(EventInferenceStatus.Failed);
         inference.FailureKind.Should().Be(MlInferenceFailureKind.Unexpected);
     }
@@ -213,54 +213,54 @@ public sealed class SuspectedEventInferenceEndpointTests : IClassFixture<Inferen
     [Fact]
     public async Task ZeroTelemetry_EventAccepted_MlNotCalled_SkippedPersisted()
     {
-        using var client = await factory.CreateAuthenticatedClientAsync();
+        using var authenticated = await factory.CreateAuthenticatedClientAsync();
         var eventId = Guid.NewGuid();
 
-        var response = await client.PostAsJsonAsync("/api/v1/events/suspected", SuspectedEvent(
+        var response = await authenticated.Client.PostAsJsonAsync("/api/v1/events/suspected", SuspectedEvent(
             eventId, Guid.NewGuid(), Guid.NewGuid(), DateTimeOffset.UtcNow.AddSeconds(-5)));
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
         factory.MlClient.CallCount.Should().Be(0);
-        var inference = (await factory.Inferences.GetInferenceAsync(eventId))!;
+        var inference = (await factory.Inferences.GetInferenceAsync(authenticated.UserId, eventId))!;
         inference.Status.Should().Be(EventInferenceStatus.SkippedNoTelemetry);
     }
 
     [Fact]
     public async Task WrongUsersTelemetry_IsNeverIncluded()
     {
-        using var firstClient = await factory.CreateAuthenticatedClientAsync();
+        using var first = await factory.CreateAuthenticatedClientAsync();
         var deviceId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
         var detectedAt = DateTimeOffset.UtcNow.AddSeconds(-5);
-        (await firstClient.PostAsJsonAsync("/api/v1/telemetry/batch", TelemetryBatch(deviceId, sessionId, detectedAt)))
+        (await first.Client.PostAsJsonAsync("/api/v1/telemetry/batch", TelemetryBatch(deviceId, sessionId, detectedAt)))
             .StatusCode.Should().Be(HttpStatusCode.Accepted);
 
-        using var secondClient = await factory.CreateAuthenticatedClientAsync();
+        using var second = await factory.CreateAuthenticatedClientAsync();
         var eventId = Guid.NewGuid();
-        var response = await secondClient.PostAsJsonAsync("/api/v1/events/suspected", SuspectedEvent(
+        var response = await second.Client.PostAsJsonAsync("/api/v1/events/suspected", SuspectedEvent(
             eventId, deviceId, sessionId, detectedAt));
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
         factory.MlClient.CallCount.Should().Be(0);
-        var inference = (await factory.Inferences.GetInferenceAsync(eventId))!;
+        var inference = (await factory.Inferences.GetInferenceAsync(second.UserId, eventId))!;
         inference.Status.Should().Be(EventInferenceStatus.SkippedNoTelemetry);
     }
 
     [Fact]
     public async Task WrongDeviceTelemetry_IsNeverIncluded()
     {
-        using var client = await factory.CreateAuthenticatedClientAsync();
+        using var authenticated = await factory.CreateAuthenticatedClientAsync();
         var detectedAt = DateTimeOffset.UtcNow.AddSeconds(-5);
-        (await client.PostAsJsonAsync("/api/v1/telemetry/batch", TelemetryBatch(Guid.NewGuid(), Guid.NewGuid(), detectedAt)))
+        (await authenticated.Client.PostAsJsonAsync("/api/v1/telemetry/batch", TelemetryBatch(Guid.NewGuid(), Guid.NewGuid(), detectedAt)))
             .StatusCode.Should().Be(HttpStatusCode.Accepted);
 
         var eventId = Guid.NewGuid();
-        var response = await client.PostAsJsonAsync("/api/v1/events/suspected", SuspectedEvent(
+        var response = await authenticated.Client.PostAsJsonAsync("/api/v1/events/suspected", SuspectedEvent(
             eventId, Guid.NewGuid(), Guid.NewGuid(), detectedAt));
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
         factory.MlClient.CallCount.Should().Be(0);
-        var inference = (await factory.Inferences.GetInferenceAsync(eventId))!;
+        var inference = (await factory.Inferences.GetInferenceAsync(authenticated.UserId, eventId))!;
         inference.Status.Should().Be(EventInferenceStatus.SkippedNoTelemetry);
     }
 

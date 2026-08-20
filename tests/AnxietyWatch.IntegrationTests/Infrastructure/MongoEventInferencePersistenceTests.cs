@@ -60,7 +60,7 @@ public sealed class MongoEventInferencePersistenceTests : IClassFixture<MongoDbC
         documents[0]["Target"].AsString.Should().Be("target_support_requested");
         documents[0]["FailureKind"].IsBsonNull.Should().BeTrue();
 
-        var stored = (await repository.GetInferenceAsync(eventId))!;
+        var stored = (await repository.GetInferenceAsync(userId, eventId))!;
         stored.Status.Should().Be(EventInferenceStatus.Succeeded);
         stored.Prediction.Should().Be(1);
     }

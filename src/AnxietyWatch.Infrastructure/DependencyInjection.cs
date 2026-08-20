@@ -68,7 +68,7 @@ public static class DependencyInjection
         {
             AllowAutoRedirect = false
         });
-        services.AddSingleton<AnxietyWatch.Application.Features.Wearables.ISuspectedEventInferenceService, SuspectedEventInferenceService>();
+        services.AddTransient<AnxietyWatch.Application.Features.Wearables.ISuspectedEventInferenceService, SuspectedEventInferenceService>();
 
         if (string.Equals(configuration["Persistence:Provider"], "Mongo", StringComparison.OrdinalIgnoreCase))
         {

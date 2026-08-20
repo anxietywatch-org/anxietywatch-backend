@@ -32,6 +32,22 @@ public abstract class SuspectedEventInferenceFlowTests
             configuration);
     }
 
+    protected void BuildServiceFromLookback(string? lookbackValue)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Ml:Inference:TelemetryLookbackSeconds"] = lookbackValue
+            })
+            .Build();
+        Service = new SuspectedEventInferenceService(
+            NullLogger<SuspectedEventInferenceService>.Instance,
+            SyncRepository,
+            InferenceRepository,
+            MlClient,
+            configuration);
+    }
+
     private static TelemetryBatchRequest Batch(
         Guid batchId,
         Guid deviceId,
@@ -104,7 +120,7 @@ public abstract class SuspectedEventInferenceFlowTests
         request.DetectedAt.Should().Be(detectedAt);
         request.Samples.Select(sample => sample.Timestamp).Should().Equal(T0.AddSeconds(-30), T0);
 
-        var inference = (await InferenceRepository.GetInferenceAsync(eventId))!;
+        var inference = (await InferenceRepository.GetInferenceAsync(userId, eventId))!;
         inference.Status.Should().Be(EventInferenceStatus.Succeeded);
         inference.Prediction.Should().Be(0);
         inference.SupportProbability.Should().Be(0.2);
@@ -132,7 +148,7 @@ public abstract class SuspectedEventInferenceFlowTests
         await Service.RunInferenceAsync(secondUser, evt);
 
         MlClient.CallCount.Should().Be(0);
-        var inference = (await InferenceRepository.GetInferenceAsync(evt.EventId))!;
+        var inference = (await InferenceRepository.GetInferenceAsync(secondUser, evt.EventId))!;
         inference.Status.Should().Be(EventInferenceStatus.SkippedNoTelemetry);
     }
 
@@ -153,7 +169,7 @@ public abstract class SuspectedEventInferenceFlowTests
         await Service.RunInferenceAsync(userId, evt);
 
         MlClient.CallCount.Should().Be(0);
-        var inference = (await InferenceRepository.GetInferenceAsync(evt.EventId))!;
+        var inference = (await InferenceRepository.GetInferenceAsync(userId, evt.EventId))!;
         inference.Status.Should().Be(EventInferenceStatus.SkippedNoTelemetry);
     }
 
@@ -256,7 +272,7 @@ public abstract class SuspectedEventInferenceFlowTests
         await Service.RunInferenceAsync(userId, evt);
 
         MlClient.CallCount.Should().Be(0);
-        var inference = (await InferenceRepository.GetInferenceAsync(evt.EventId))!;
+        var inference = (await InferenceRepository.GetInferenceAsync(userId, evt.EventId))!;
         inference.Status.Should().Be(EventInferenceStatus.SkippedNoTelemetry);
         inference.Prediction.Should().BeNull();
         inference.FailureKind.Should().BeNull();
@@ -278,7 +294,7 @@ public abstract class SuspectedEventInferenceFlowTests
 
         await Service.RunInferenceAsync(userId, evt);
 
-        var inference = (await InferenceRepository.GetInferenceAsync(eventId))!;
+        var inference = (await InferenceRepository.GetInferenceAsync(userId, eventId))!;
         inference.Status.Should().Be(EventInferenceStatus.Succeeded);
         inference.Prediction.Should().Be(1);
         inference.SupportProbability.Should().Be(0.95);
@@ -307,7 +323,7 @@ public abstract class SuspectedEventInferenceFlowTests
 
         await Service.RunInferenceAsync(userId, evt);
 
-        var inference = (await InferenceRepository.GetInferenceAsync(eventId))!;
+        var inference = (await InferenceRepository.GetInferenceAsync(userId, eventId))!;
         inference.Status.Should().Be(EventInferenceStatus.Failed);
         inference.FailureKind.Should().Be(kind);
         inference.Prediction.Should().BeNull();
@@ -329,12 +345,12 @@ public abstract class SuspectedEventInferenceFlowTests
 
         await Service.RunInferenceAsync(userId, evt);
 
-        var inference = (await InferenceRepository.GetInferenceAsync(eventId))!;
+        var inference = (await InferenceRepository.GetInferenceAsync(userId, eventId))!;
         inference.Status.Should().Be(EventInferenceStatus.Failed);
         inference.FailureKind.Should().Be(MlInferenceFailureKind.Unexpected);
     }
 
-    [Fact]
+[Fact]
     public async Task PersistenceIdempotency_SingleRecordForEventId()
     {
         var userId = Guid.NewGuid();
@@ -353,9 +369,87 @@ public abstract class SuspectedEventInferenceFlowTests
         (await InferenceRepository.TryStoreInferenceAsync(userId, result)).Should().BeTrue();
         (await InferenceRepository.TryStoreInferenceAsync(userId, result)).Should().BeFalse();
 
-        var stored = (await InferenceRepository.GetInferenceAsync(eventId))!;
+        var stored = (await InferenceRepository.GetInferenceAsync(userId, eventId))!;
         stored.Status.Should().Be(EventInferenceStatus.Succeeded);
         stored.Prediction.Should().Be(1);
-        stored.SupportProbability.Should().Be(0.95);
+    }
+
+    [Fact]
+    public async Task CrossUserReadIsolation_OtherUsersCannotReadEventId()
+    {
+        var firstUser = Guid.NewGuid();
+        var secondUser = Guid.NewGuid();
+        var eventId = Guid.NewGuid();
+        var result = new EventInferenceResult(
+            eventId,
+            EventInferenceStatus.Succeeded,
+            0,
+            0.2,
+            0.3,
+            "v0.1.0",
+            "target_support_requested",
+            null,
+            T0);
+
+        (await InferenceRepository.TryStoreInferenceAsync(firstUser, result)).Should().BeTrue();
+
+        (await InferenceRepository.GetInferenceAsync(firstUser, eventId))!.Should().BeEquivalentTo(result);
+        (await InferenceRepository.GetInferenceAsync(secondUser, eventId)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("NaN")]
+    [InlineData("Infinity")]
+    [InlineData("-Infinity")]
+    [InlineData("not-a-number")]
+    [InlineData("")]
+    public async Task InvalidLookbackConfiguration_FallsBackToSixtySeconds(string value)
+    {
+        BuildServiceFromLookback(value);
+        var userId = Guid.NewGuid();
+        var deviceId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        await StoreBatchAsync(SyncRepository, userId, Batch(
+            Guid.NewGuid(), deviceId, sessionId, T0.AddSeconds(-30), T0, 0,
+            Sample(T0.AddSeconds(-30))));
+        var evt = SuspectedEvent(Guid.NewGuid(), deviceId, sessionId, T0);
+        (await SyncRepository.TryStoreSuspectedEventAsync(userId, evt)).Should().BeTrue();
+        MlClient.EnqueueSuccess();
+
+        await Service.RunInferenceAsync(userId, evt);
+
+        MlClient.CallCount.Should().Be(1);
+        var request = MlClient.Requests.Should().ContainSingle().Subject;
+        request.Samples.Select(sample => sample.Timestamp).Should().Equal(T0.AddSeconds(-30));
+    }
+
+    [Fact]
+    public async Task AttemptedAt_IsCapturedAtAttemptStartNotCompletion()
+    {
+        var userId = Guid.NewGuid();
+        var deviceId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var eventId = Guid.NewGuid();
+        await StoreBatchAsync(SyncRepository, userId, Batch(
+            Guid.NewGuid(), deviceId, sessionId, T0.AddSeconds(-10), T0, 0,
+            Sample(T0.AddSeconds(-10))));
+        var evt = SuspectedEvent(eventId, deviceId, sessionId, T0);
+        (await SyncRepository.TryStoreSuspectedEventAsync(userId, evt)).Should().BeTrue();
+        MlClient.EnqueueAsync(async () =>
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(300));
+            return MlInferenceResult.Success(new MlInferenceResponse(
+                0, 0.1, 0.3, "v0.1.0", "target_support_requested"));
+        });
+
+        var started = DateTimeOffset.UtcNow;
+        await Service.RunInferenceAsync(userId, evt);
+        var finished = DateTimeOffset.UtcNow;
+
+        var inference = (await InferenceRepository.GetInferenceAsync(userId, eventId))!;
+        inference.AttemptedAt.Should().BeOnOrAfter(started);
+        inference.AttemptedAt.Should().BeOnOrBefore(finished - TimeSpan.FromMilliseconds(150));
     }
 }

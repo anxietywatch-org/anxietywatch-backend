@@ -5,7 +5,7 @@ namespace AnxietyWatch.IntegrationTests.Infrastructure;
 
 public sealed class FakeMlInferenceClient : IMlInferenceClient
 {
-    private readonly ConcurrentQueue<Func<MlInferenceResult>> results = new();
+    private readonly ConcurrentQueue<Func<Task<MlInferenceResult>>> results = new();
 
     public ConcurrentQueue<MlWindowInferenceRequest> Requests { get; } = new();
 
@@ -19,9 +19,11 @@ public sealed class FakeMlInferenceClient : IMlInferenceClient
         }
     }
 
-    public void Enqueue(MlInferenceResult result) => results.Enqueue(() => result);
+    public void Enqueue(MlInferenceResult result) => Enqueue(() => result);
 
-    public void Enqueue(Func<MlInferenceResult> factory) => results.Enqueue(factory);
+    public void Enqueue(Func<MlInferenceResult> factory) => EnqueueAsync(() => Task.FromResult(factory()));
+
+    public void EnqueueAsync(Func<Task<MlInferenceResult>> factory) => results.Enqueue(factory);
 
     public void EnqueueSuccess(
         int prediction = 0,
@@ -38,17 +40,17 @@ public sealed class FakeMlInferenceClient : IMlInferenceClient
     public void EnqueueThrow(Exception exception) =>
         Enqueue(() => throw exception);
 
-    public Task<MlInferenceResult> PredictWindowAsync(
+    public async Task<MlInferenceResult> PredictWindowAsync(
         MlWindowInferenceRequest request,
         CancellationToken cancellationToken = default)
     {
         Requests.Enqueue(request);
         if (results.TryDequeue(out var factory))
         {
-            return Task.FromResult(factory());
+            return await factory();
         }
 
-        return Task.FromResult(MlInferenceResult.Success(new MlInferenceResponse(
-            0, 0.1, 0.3, "v0.1.0", "target_support_requested")));
+        return MlInferenceResult.Success(new MlInferenceResponse(
+            0, 0.1, 0.3, "v0.1.0", "target_support_requested"));
     }
 }

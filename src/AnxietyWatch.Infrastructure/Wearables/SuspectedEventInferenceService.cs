@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using AnxietyWatch.Application.Abstractions.MlInference;
 using AnxietyWatch.Application.Features.Wearables;
 using Microsoft.Extensions.Configuration;
@@ -22,6 +23,7 @@ public sealed class SuspectedEventInferenceService(
         CancellationToken cancellationToken = default)
     {
         var eventId = suspectedEvent.EventId;
+        var attemptedAt = DateTimeOffset.UtcNow;
         var latency = Stopwatch.StartNew();
         try
         {
@@ -42,7 +44,7 @@ public sealed class SuspectedEventInferenceService(
                     "ML inference skipped for event {EventId}: no telemetry in the {LookbackSeconds}s lookback window.",
                     eventId,
                     _telemetryLookback.TotalSeconds);
-                await TryPersistSkippedAsync(userId, eventId, cancellationToken);
+                await TryPersistSkippedAsync(userId, eventId, attemptedAt, cancellationToken);
                 return;
             }
 
@@ -63,7 +65,7 @@ public sealed class SuspectedEventInferenceService(
                     eventId,
                     result.Response!.ModelVersion,
                     latency.ElapsedMilliseconds);
-                await TryPersistSuccessAsync(userId, eventId, result.Response, cancellationToken);
+                await TryPersistSuccessAsync(userId, eventId, result.Response, attemptedAt, cancellationToken);
                 return;
             }
 
@@ -72,7 +74,7 @@ public sealed class SuspectedEventInferenceService(
                 eventId,
                 result.FailureKind,
                 latency.ElapsedMilliseconds);
-            await TryPersistFailureAsync(userId, eventId, result.FailureKind, cancellationToken);
+            await TryPersistFailureAsync(userId, eventId, result.FailureKind, attemptedAt, cancellationToken);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -81,7 +83,7 @@ public sealed class SuspectedEventInferenceService(
                 "ML inference timed out for event {EventId} after {LatencyMs}ms.",
                 eventId,
                 latency.ElapsedMilliseconds);
-            await TryPersistFailureAsync(userId, eventId, MlInferenceFailureKind.Transient, cancellationToken);
+            await TryPersistFailureAsync(userId, eventId, MlInferenceFailureKind.Transient, attemptedAt, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -95,11 +97,15 @@ public sealed class SuspectedEventInferenceService(
                 "ML inference crashed unexpectedly for event {EventId} after {LatencyMs}ms.",
                 eventId,
                 latency.ElapsedMilliseconds);
-            await TryPersistFailureAsync(userId, eventId, MlInferenceFailureKind.Unexpected, cancellationToken);
+            await TryPersistFailureAsync(userId, eventId, MlInferenceFailureKind.Unexpected, attemptedAt, cancellationToken);
         }
     }
 
-    private async Task TryPersistSkippedAsync(Guid userId, Guid eventId, CancellationToken cancellationToken)
+    private async Task TryPersistSkippedAsync(
+        Guid userId,
+        Guid eventId,
+        DateTimeOffset attemptedAt,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -114,7 +120,7 @@ public sealed class SuspectedEventInferenceService(
                     null,
                     null,
                     null,
-                    DateTimeOffset.UtcNow),
+                    attemptedAt),
                 cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -131,6 +137,7 @@ public sealed class SuspectedEventInferenceService(
         Guid userId,
         Guid eventId,
         MlInferenceResponse response,
+        DateTimeOffset attemptedAt,
         CancellationToken cancellationToken)
     {
         try
@@ -146,7 +153,7 @@ public sealed class SuspectedEventInferenceService(
                     response.ModelVersion,
                     response.Target,
                     null,
-                    DateTimeOffset.UtcNow),
+                    attemptedAt),
                 cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -163,6 +170,7 @@ public sealed class SuspectedEventInferenceService(
         Guid userId,
         Guid eventId,
         MlInferenceFailureKind? failureKind,
+        DateTimeOffset attemptedAt,
         CancellationToken cancellationToken)
     {
         try
@@ -178,7 +186,7 @@ public sealed class SuspectedEventInferenceService(
                     null,
                     null,
                     failureKind,
-                    DateTimeOffset.UtcNow),
+                    attemptedAt),
                 cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -206,5 +214,9 @@ public sealed class SuspectedEventInferenceService(
             .ToArray();
 
     private static double ParseLookback(string? value, double fallback) =>
-        double.TryParse(value, out var parsed) && parsed >= 0 ? parsed : fallback;
+        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) &&
+        double.IsFinite(parsed) &&
+        parsed > 0
+            ? parsed
+            : fallback;
 }

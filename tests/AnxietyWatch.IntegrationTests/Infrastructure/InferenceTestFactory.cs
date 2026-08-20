@@ -13,6 +13,20 @@ using Microsoft.Extensions.Logging;
 
 namespace AnxietyWatch.IntegrationTests.Infrastructure;
 
+public sealed class AuthenticatedTestClient : IDisposable
+{
+    public AuthenticatedTestClient(HttpClient client, Guid userId)
+    {
+        Client = client;
+        UserId = userId;
+    }
+
+    public HttpClient Client { get; }
+    public Guid UserId { get; }
+
+    public void Dispose() => Client.Dispose();
+}
+
 public sealed class InferenceTestFactory : WebApplicationFactory<Program>
 {
     public FakeMlInferenceClient MlClient { get; } = new();
@@ -22,7 +36,7 @@ public sealed class InferenceTestFactory : WebApplicationFactory<Program>
     public IEventInferenceRepository Inferences =>
         Services.GetRequiredService<IEventInferenceRepository>();
 
-    public async Task<HttpClient> CreateAuthenticatedClientAsync()
+    public async Task<AuthenticatedTestClient> CreateAuthenticatedClientAsync()
     {
         var client = CreateClient();
         var registration = await client.PostAsJsonAsync("/api/auth/register", new
@@ -36,7 +50,11 @@ public sealed class InferenceTestFactory : WebApplicationFactory<Program>
         });
         var auth = await registration.Content.ReadFromJsonAsync<AuthResponse>();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth!.Token);
-        return client;
+        var userId = Guid.Parse(new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler()
+            .ReadJwtToken(auth.Token)
+            .Claims.Single(claim => claim.Type == "sub")
+            .Value);
+        return new AuthenticatedTestClient(client, userId);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)

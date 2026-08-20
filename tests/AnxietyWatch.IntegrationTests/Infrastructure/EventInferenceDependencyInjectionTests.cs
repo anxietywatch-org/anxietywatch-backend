@@ -64,6 +64,17 @@ public sealed class EventInferenceDependencyInjectionTests : IClassFixture<Mongo
     }
 
     [Fact]
+    public void SuspectedEventInferenceService_IsTransientNotSingleton()
+    {
+        using var provider = BuildProvider("InMemory");
+
+        var first = provider.GetRequiredService<ISuspectedEventInferenceService>();
+        var second = provider.GetRequiredService<ISuspectedEventInferenceService>();
+
+        first.Should().NotBeSameAs(second);
+    }
+
+    [Fact]
     public void MongoInferenceRepository_IsRegistered()
     {
         using var provider = BuildProvider("Mongo", mongoFixture.Container.GetConnectionString());

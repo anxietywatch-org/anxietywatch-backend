@@ -16,7 +16,11 @@ public sealed class InMemoryEventInferenceRepository : IEventInferenceRepository
         Task.FromResult(inferences.TryAdd(result.EventId, new StoredEventInference(userId, result)));
 
     public Task<EventInferenceResult?> GetInferenceAsync(
+        Guid userId,
         Guid eventId,
         CancellationToken cancellationToken = default) =>
-        Task.FromResult(inferences.TryGetValue(eventId, out var stored) ? stored.Result : null);
+        Task.FromResult(
+            inferences.TryGetValue(eventId, out var stored) && stored.UserId == userId
+                ? stored.Result
+                : null);
 }

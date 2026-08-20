@@ -82,6 +82,21 @@ B4 currently performs inference synchronously in the suspected-event processing 
 queue). The endpoint can wait for the ML attempt after the event has already been persisted, bounded
 by the B3 timeout/retry configuration. This is an accepted MVP limitation.
 
+### Cancellation / reconciliation gap (MVP limitation)
+
+Because inference runs synchronously inside the inbound request, if the client cancels the request
+after the suspected event has been stored but before the ML attempt completes, cancellation
+propagates into `RunInferenceAsync` and no inference record is persisted for that event. A later
+duplicate submission of the same `eventId` is treated as a duplicate and does **not** re-trigger ML
+(the "only first accepted event triggers inference" rule). In this MVP this is an accepted, documented
+limitation: a retried event will simply not have an inference record.
+
+This is intentionally **not** solved here with fire-and-forget tasks, `Task.Run`, or an in-memory
+background queue (unbounded, lost on process restart, untracked). The intended fix is a durable
+reconciliation design: persist an "attempted/pending" marker before awaiting the ML client, and
+re-drive inference for stored-but-pending events outside the request lifetime (background worker /
+queue). That work is deferred to a later milestone (007-B5+).
+
 ### Safe logging
 
 Logs only include `eventId`, inference status, failure kind, `modelVersion`, and latency. API keys,

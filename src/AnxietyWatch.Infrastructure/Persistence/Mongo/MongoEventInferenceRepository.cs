@@ -31,10 +31,13 @@ public sealed class MongoEventInferenceRepository(MongoContext context) : IEvent
     }
 
     public async Task<EventInferenceResult?> GetInferenceAsync(
+        Guid userId,
         Guid eventId,
         CancellationToken cancellationToken = default)
     {
-        var filter = Builders<BsonDocument>.Filter.Eq("_id", eventId.ToString());
+        var filter = Builders<BsonDocument>.Filter.And(
+            Builders<BsonDocument>.Filter.Eq("_id", eventId.ToString()),
+            Builders<BsonDocument>.Filter.Eq("userId", userId.ToString()));
         var document = await inferences.Find(filter).FirstOrDefaultAsync(cancellationToken);
         return document is null
             ? null

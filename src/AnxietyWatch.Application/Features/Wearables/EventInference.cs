@@ -30,6 +30,7 @@ public interface IEventInferenceRepository
         CancellationToken cancellationToken = default);
 
     Task<EventInferenceResult?> GetInferenceAsync(
+        Guid userId,
         Guid eventId,
         CancellationToken cancellationToken = default);
 }
