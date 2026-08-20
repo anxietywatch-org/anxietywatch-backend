@@ -1,7 +1,9 @@
+using System.Net.Http;
 using AnxietyWatch.Domain.Plans;
 using AnxietyWatch.Domain.Users;
 using AnxietyWatch.Application.Features.Support;
 using AnxietyWatch.Infrastructure.Caching;
+using AnxietyWatch.Infrastructure.MlInference;
 using AnxietyWatch.Infrastructure.Notifications;
 using AnxietyWatch.Infrastructure.Persistence;
 using AnxietyWatch.Infrastructure.Persistence.Mongo;
@@ -58,6 +60,14 @@ public static class DependencyInjection
         });
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Notifications.ICaregiverAlertDispatcher, CaregiverAlertDispatcher>();
 
+        services.AddHttpClient<AnxietyWatch.Application.Abstractions.MlInference.IMlInferenceClient, MlInferenceHttpClient>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(GetMlInferenceTimeoutSeconds(configuration));
+        }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false
+        });
+
         if (string.Equals(configuration["Persistence:Provider"], "Mongo", StringComparison.OrdinalIgnoreCase))
         {
             services.AddSingleton<MongoContext>();
@@ -88,4 +98,9 @@ public static class DependencyInjection
 
         return services;
     }
+
+    private static int GetMlInferenceTimeoutSeconds(IConfiguration configuration) =>
+        int.TryParse(configuration["Ml:Inference:TimeoutSeconds"], out var seconds) && seconds > 0
+            ? seconds
+            : 10;
 }
