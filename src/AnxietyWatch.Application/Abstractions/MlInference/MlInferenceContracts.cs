@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace AnxietyWatch.Application.Abstractions.MlInference;
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum MlInferenceFailureKind
 {
     Unauthorized,

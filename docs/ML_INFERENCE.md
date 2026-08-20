@@ -1,8 +1,13 @@
 # AnxietyWatch Backend → ML Inference Client
 
-The backend exposes a single reusable typed HTTP client for the secured AnxietyWatch ML service.
-It is registered in `AnxietyWatch.Infrastructure` and is **not yet invoked** from suspected events
-or any command handler. Nothing wires inference to product behavior in this change.
+The backend exposes a single reusable typed HTTP client for the secured AnxietyWatch ML service,
+registered in `AnxietyWatch.Infrastructure`.
+
+For **007-B4**, the client is invoked from the suspected-event flow (`POST /api/v1/events/suspected`):
+a newly accepted suspected event triggers a window inference call as backend enrichment. `prediction`
+is stored and exposed nowhere to the watch yet; it does not trigger SOS, caregiver notifications, or
+any other product behavior. The ML result is a `Succeeded`/`SkippedNoTelemetry`/`Failed` enrichment
+record persisted in `event_inferences`, keyed by `eventId`.
 
 ## ML endpoint
 
@@ -21,6 +26,7 @@ constructed; there is no dynamic per-call secret reload in this MVP.
 | `Ml:Inference:BaseUrl` | Absolute **HTTPS** base URL of the ML service. Non-HTTPS URLs are rejected with a `CONFIGURATION` failure and no request is sent. | `Ml__Inference__BaseUrl` |
 | `Ml:Inference:ApiKey` | Secret value sent as the `X-Api-Key` header. **Configuration key name only; no secret value is committed.** | `Ml__Inference__ApiKey` |
 | `Ml:Inference:TimeoutSeconds` | HTTP timeout, defaults to `10` | `Ml__Inference__TimeoutSeconds` |
+| `Ml:Inference:TelemetryLookbackSeconds` | Raw telemetry lookback sent to ML, defaults to `60`. Must cover the deployed model's required event window. | `Ml__Inference__TelemetryLookbackSeconds` |
 | `Ml:Inference:Retry:BaseDelaySeconds` | Exponential backoff base, defaults to `1` (1s, 2s) | `Ml__Inference__Retry__BaseDelaySeconds` |
 | `Ml:Inference:Retry:MaxRetries` | Maximum retries after the initial attempt for transient failures, defaults to `2` | `Ml__Inference__Retry__MaxRetries` |
 
@@ -31,6 +37,56 @@ Automatic HTTP redirects are disabled: the key is only ever sent to the configur
 If `PredictWindowAsync` is called without a valid `BaseUrl`/`ApiKey`, the client returns a
 `CONFIGURATION` failure **without sending any HTTP request**. A missing key does not prevent the
 backend from starting.
+
+## Suspected-event integration (007-B4)
+
+Inference runs in the suspected-event processing path, after the event has been durably accepted.
+Sequence for a **new** `eventId`:
+
+1. `TryStoreSuspectedEventAsync` stores the event. A duplicate `eventId` returns the existing
+   duplicate response and **never** calls ML again.
+2. The authenticated backend user is the window owner; telemetry is scoped by that user, plus the
+   event's `deviceId` and `sessionId` (B2).
+3. `windowEnd = detectedAt`, `windowStart = detectedAt - Ml:Inference:TelemetryLookbackSeconds`.
+   This lookback only bounds how much raw source telemetry is fetched and sent; the ML service
+   remains authoritative for final trimming and feature engineering. The backend lookback must cover
+   the deployed model's required event window (v0.1.0 uses 60 seconds).
+4. B2 raw samples are mapped 1:1 to `MlWindowSampleRequest` (`Timestamp`, `HeartRateBpm`, `IbiMs`,
+   `SkinTemperatureCelsius`, `Quality`). No feature engineering, no derived watch features, no
+   baseline/score, no accelerometer/ambient values, and no `userId` in the ML request.
+5. If the window is empty, ML is not called and a `SkippedNoTelemetry` inference outcome is
+   persisted. Local validation intentionally does not replicate ML rules (e.g. min sample counts,
+   HR ratio).
+6. The ML result is persisted in `event_inferences` keyed by `eventId`:
+   - `Succeeded` stores `prediction`, `support_probability`, `threshold`, `model_version`, `target`.
+   - `SkippedNoTelemetry` stores status only.
+   - `Failed` stores the `MlInferenceFailureKind` classification.
+
+Raw telemetry remains in `telemetry_batches`; inference documents store no raw physiology, no
+request payload, no response body, no exception strings, and no API key.
+
+### Failure safety
+
+An ML failure never rejects an already-accepted suspected event:
+
+- every failure kind (`Unauthorized`, `Validation`, `Transient`, `Unexpected`, `Configuration`) is
+  persisted as `Failed` and the suspected-event response is unaffected;
+- an unexpected client exception is caught at the integration boundary, logged safely, and persisted
+  as a generic `Failed`/`Unexpected` outcome where possible;
+- actual inbound-request cancellation propagates (matching existing handler behavior); ML timeouts
+  are classified `Transient` by the client.
+
+### Latency / MVP limitation
+
+B4 currently performs inference synchronously in the suspected-event processing path (no background
+queue). The endpoint can wait for the ML attempt after the event has already been persisted, bounded
+by the B3 timeout/retry configuration. This is an accepted MVP limitation.
+
+### Safe logging
+
+Logs only include `eventId`, inference status, failure kind, `modelVersion`, and latency. API keys,
+raw telemetry (HR, IBI, skin temperature), request/response bodies, user identity, and tokens are
+never logged.
 
 ## Request/response contract
 
