@@ -427,4 +427,157 @@ public sealed class MlInferenceClientTests
         sample.GetProperty("ibiMs").GetArrayLength().Should().Be(0);
         sample.GetProperty("skinTemperatureCelsius").ValueKind.Should().Be(JsonValueKind.Null);
     }
+
+    [Fact]
+    public async Task HttpsBaseUrl_IsAccepted()
+    {
+        var (client, handler, _) = CreateClient(ValidConfig());
+
+        var result = await client.PredictWindowAsync(SampleRequest());
+
+        result.IsSuccess.Should().BeTrue();
+        handler.AttemptCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task HttpBaseUrl_IsRejectedAsConfigurationFailureWithZeroRequests()
+    {
+        var (client, handler, _) = CreateClient(Config(
+            ("Ml:Inference:BaseUrl", "http://ml.example.test"),
+            ("Ml:Inference:ApiKey", FakeApiKey),
+            ("Ml:Inference:Retry:BaseDelaySeconds", "0")));
+
+        var result = await client.PredictWindowAsync(SampleRequest());
+
+        result.FailureKind.Should().Be(MlInferenceFailureKind.Configuration);
+        handler.AttemptCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Redirect3xx_IsUnexpectedWithoutRetry()
+    {
+        var (client, handler, _) = CreateClient(ValidConfig());
+        handler.Enqueue(302);
+
+        var result = await client.PredictWindowAsync(SampleRequest());
+
+        result.FailureKind.Should().Be(MlInferenceFailureKind.Unexpected);
+        handler.AttemptCount.Should().Be(1);
+    }
+
+    private static async Task<(MlInferenceResult Result, FakeHttpMessageHandler Handler)> PredictWithBodyAsync(string body)
+    {
+        var (client, handler, _) = CreateClient(ValidConfig());
+        handler.Enqueue(200, body);
+        var result = await client.PredictWindowAsync(SampleRequest());
+        return (result, handler);
+    }
+
+    [Fact]
+    public async Task A_EmptySuccessObject_IsUnexpectedWithoutRetry()
+    {
+        var (result, handler) = await PredictWithBodyAsync("{}");
+        result.FailureKind.Should().Be(MlInferenceFailureKind.Unexpected);
+        handler.AttemptCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task B_MissingSupportProbability_IsUnexpectedWithoutRetry()
+    {
+        var (result, handler) = await PredictWithBodyAsync(
+            """{"prediction":0,"threshold":0.003,"model_version":"0.1.0","target":"target_support_requested"}""");
+        result.FailureKind.Should().Be(MlInferenceFailureKind.Unexpected);
+        handler.AttemptCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task C_MissingThreshold_IsUnexpectedWithoutRetry()
+    {
+        var (result, handler) = await PredictWithBodyAsync(
+            """{"prediction":0,"support_probability":0.001,"model_version":"0.1.0","target":"target_support_requested"}""");
+        result.FailureKind.Should().Be(MlInferenceFailureKind.Unexpected);
+        handler.AttemptCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task D_MissingModelVersion_IsUnexpectedWithoutRetry()
+    {
+        var (result, handler) = await PredictWithBodyAsync(
+            """{"prediction":0,"support_probability":0.001,"threshold":0.003,"target":"target_support_requested"}""");
+        result.FailureKind.Should().Be(MlInferenceFailureKind.Unexpected);
+        handler.AttemptCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task E_MissingTarget_IsUnexpectedWithoutRetry()
+    {
+        var (result, handler) = await PredictWithBodyAsync(
+            """{"prediction":0,"support_probability":0.001,"threshold":0.003,"model_version":"0.1.0"}""");
+        result.FailureKind.Should().Be(MlInferenceFailureKind.Unexpected);
+        handler.AttemptCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task F_PredictionOutsideRange_IsUnexpectedWithoutRetry()
+    {
+        var (result, handler) = await PredictWithBodyAsync(
+            """{"prediction":2,"support_probability":0.5,"threshold":0.3,"model_version":"0.1.0","target":"target_support_requested"}""");
+        result.FailureKind.Should().Be(MlInferenceFailureKind.Unexpected);
+        handler.AttemptCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task G_NegativeSupportProbability_IsUnexpectedWithoutRetry()
+    {
+        var (result, handler) = await PredictWithBodyAsync(
+            """{"prediction":0,"support_probability":-0.1,"threshold":0.3,"model_version":"0.1.0","target":"target_support_requested"}""");
+        result.FailureKind.Should().Be(MlInferenceFailureKind.Unexpected);
+        handler.AttemptCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task H_SupportProbabilityAboveOne_IsUnexpectedWithoutRetry()
+    {
+        var (result, handler) = await PredictWithBodyAsync(
+            """{"prediction":0,"support_probability":1.1,"threshold":0.3,"model_version":"0.1.0","target":"target_support_requested"}""");
+        result.FailureKind.Should().Be(MlInferenceFailureKind.Unexpected);
+        handler.AttemptCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task I_ThresholdOutsideRange_IsUnexpectedWithoutRetry()
+    {
+        var (result, handler) = await PredictWithBodyAsync(
+            """{"prediction":0,"support_probability":0.5,"threshold":1.2,"model_version":"0.1.0","target":"target_support_requested"}""");
+        result.FailureKind.Should().Be(MlInferenceFailureKind.Unexpected);
+        handler.AttemptCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task J_EmptyModelVersion_IsUnexpectedWithoutRetry()
+    {
+        var (result, handler) = await PredictWithBodyAsync(
+            """{"prediction":0,"support_probability":0.5,"threshold":0.3,"model_version":"","target":"target_support_requested"}""");
+        result.FailureKind.Should().Be(MlInferenceFailureKind.Unexpected);
+        handler.AttemptCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task K_WrongTarget_IsUnexpectedWithoutRetry()
+    {
+        var (result, handler) = await PredictWithBodyAsync(
+            """{"prediction":0,"support_probability":0.5,"threshold":0.3,"model_version":"0.1.0","target":"another_target"}""");
+        result.FailureKind.Should().Be(MlInferenceFailureKind.Unexpected);
+        handler.AttemptCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task L_FullyValidResponse_StillSucceedsWithoutRetry()
+    {
+        var (result, handler) = await PredictWithBodyAsync(FakeHttpMessageHandler.SuccessBody);
+        result.IsSuccess.Should().BeTrue();
+        result.Response!.SupportProbability.Should().Be(0.001);
+        result.Response.ModelVersion.Should().Be("0.1.0");
+        handler.AttemptCount.Should().Be(1);
+    }
 }

@@ -1,3 +1,4 @@
+using System.Net.Http;
 using AnxietyWatch.Domain.Plans;
 using AnxietyWatch.Domain.Users;
 using AnxietyWatch.Application.Features.Support;
@@ -62,6 +63,9 @@ public static class DependencyInjection
         services.AddHttpClient<AnxietyWatch.Application.Abstractions.MlInference.IMlInferenceClient, MlInferenceHttpClient>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(GetMlInferenceTimeoutSeconds(configuration));
+        }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false
         });
 
         if (string.Equals(configuration["Persistence:Provider"], "Mongo", StringComparison.OrdinalIgnoreCase))

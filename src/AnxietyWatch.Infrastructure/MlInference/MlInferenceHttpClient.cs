@@ -102,10 +102,10 @@ public sealed class MlInferenceHttpClient(
             try
             {
                 var parsed = await response.Content.ReadFromJsonAsync<MlInferenceResponse>(cancellationToken);
-                if (parsed is null)
+                if (parsed is null || !IsValidResponse(parsed))
                 {
                     logger.LogWarning(
-                        "ML inference returned an empty success payload for event {EventId} after {LatencyMs}ms.",
+                        "ML inference returned an invalid success payload for event {EventId} after {LatencyMs}ms.",
                         request.EventId,
                         latency.TotalMilliseconds);
                     return MlInferenceResult.Failure(MlInferenceFailureKind.Unexpected);
@@ -148,6 +148,16 @@ public sealed class MlInferenceHttpClient(
         _ => MlInferenceFailureKind.Unexpected
     };
 
+    private static bool IsValidResponse(MlInferenceResponse response) =>
+        response.Prediction is 0 or 1 &&
+        IsProbability(response.SupportProbability) &&
+        IsProbability(response.Threshold) &&
+        !string.IsNullOrWhiteSpace(response.ModelVersion) &&
+        response.Target == "target_support_requested";
+
+    private static bool IsProbability(double value) =>
+        double.IsFinite(value) && value >= 0 && value <= 1;
+
     private bool TryResolveConfiguration(out Uri baseUrl)
     {
         baseUrl = null!;
@@ -158,7 +168,7 @@ public sealed class MlInferenceHttpClient(
 
         if (string.IsNullOrWhiteSpace(_baseUrl) ||
             !Uri.TryCreate(_baseUrl, UriKind.Absolute, out var candidate) ||
-            (candidate.Scheme != Uri.UriSchemeHttps && candidate.Scheme != Uri.UriSchemeHttp))
+            candidate.Scheme != Uri.UriSchemeHttps)
         {
             return false;
         }

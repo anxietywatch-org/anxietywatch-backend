@@ -1,3 +1,5 @@
+using System.Net.Http;
+using System.Reflection;
 using AnxietyWatch.Application.Abstractions.MlInference;
 using AnxietyWatch.Infrastructure;
 using AnxietyWatch.Infrastructure.MlInference;
@@ -75,5 +77,30 @@ public sealed class MlInferenceDependencyInjectionTests
         var httpClient = factory.CreateClient(typeof(IMlInferenceClient).Name!);
 
         httpClient.Timeout.Should().Be(TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public void MlInferenceHttpClient_DisablesAutomaticRedirects()
+    {
+        using var provider = BuildProvider(("Persistence:Provider", "InMemory"));
+
+        var factory = provider.GetRequiredService<IHttpClientFactory>();
+        var httpClient = factory.CreateClient(typeof(IMlInferenceClient).Name!);
+
+        var root = GetRootHandler(httpClient);
+        root.Should().BeOfType<SocketsHttpHandler>().Which.AllowAutoRedirect.Should().BeFalse();
+    }
+
+    private static HttpMessageHandler GetRootHandler(HttpClient httpClient)
+    {
+        var field = typeof(HttpMessageInvoker).GetField("_handler", BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new InvalidOperationException("HttpMessageInvoker._handler field not found.");
+        var handler = (HttpMessageHandler)field.GetValue(httpClient)!;
+        while (handler is DelegatingHandler delegating)
+        {
+            handler = delegating.InnerHandler;
+        }
+
+        return handler!;
     }
 }

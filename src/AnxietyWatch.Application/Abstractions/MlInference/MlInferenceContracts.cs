@@ -40,11 +40,11 @@ public sealed record MlWindowInferenceRequest(
     [property: JsonPropertyName("samples")] IReadOnlyList<MlWindowSampleRequest> Samples);
 
 public sealed record MlInferenceResponse(
-    [property: JsonPropertyName("prediction")] int Prediction,
-    [property: JsonPropertyName("support_probability")] double SupportProbability,
-    [property: JsonPropertyName("threshold")] double Threshold,
-    [property: JsonPropertyName("model_version")] string ModelVersion,
-    [property: JsonPropertyName("target")] string Target);
+    [property: JsonPropertyName("prediction"), JsonRequired] int Prediction,
+    [property: JsonPropertyName("support_probability"), JsonRequired] double SupportProbability,
+    [property: JsonPropertyName("threshold"), JsonRequired] double Threshold,
+    [property: JsonPropertyName("model_version"), JsonRequired] string ModelVersion,
+    [property: JsonPropertyName("target"), JsonRequired] string Target);
 
 public interface IMlInferenceClient
 {
