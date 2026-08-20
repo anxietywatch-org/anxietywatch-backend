@@ -95,6 +95,13 @@ public interface IWearableSyncRepository
     Task<bool> TryStoreSosCancellationAsync(Guid userId, SosCancelRequest cancellation, CancellationToken cancellationToken = default);
     Task<bool> TryStoreSuspectedEventAsync(Guid userId, SuspectedEventRequest suspectedEvent, CancellationToken cancellationToken = default);
     Task<bool> TryStoreEventDecisionAsync(Guid userId, EventDecisionRequest decision, CancellationToken cancellationToken = default);
+    Task<TelemetryWindowResult> GetTelemetryWindowAsync(
+        Guid userId,
+        Guid deviceId,
+        Guid sessionId,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record SubmitTelemetryBatchCommand(TelemetryBatchRequest Batch) : IRequest<SubmissionResponse>;
