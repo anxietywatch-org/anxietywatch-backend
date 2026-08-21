@@ -95,6 +95,13 @@ public interface IWearableSyncRepository
     Task<bool> TryStoreSosCancellationAsync(Guid userId, SosCancelRequest cancellation, CancellationToken cancellationToken = default);
     Task<bool> TryStoreSuspectedEventAsync(Guid userId, SuspectedEventRequest suspectedEvent, CancellationToken cancellationToken = default);
     Task<bool> TryStoreEventDecisionAsync(Guid userId, EventDecisionRequest decision, CancellationToken cancellationToken = default);
+    Task<TelemetryWindowResult> GetTelemetryWindowAsync(
+        Guid userId,
+        Guid deviceId,
+        Guid sessionId,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record SubmitTelemetryBatchCommand(TelemetryBatchRequest Batch) : IRequest<SubmissionResponse>;
@@ -236,8 +243,6 @@ public sealed class SuspectedEventFeaturesRequestValidator : AbstractValidator<S
         RuleFor(features => features.ValidSampleRatio).InclusiveBetween(0, 1);
         RuleFor(features => features.LastSampleAgeSeconds).GreaterThanOrEqualTo(0);
         RuleFor(features => features.SampleCount).GreaterThanOrEqualTo(0);
-        RuleFor(features => features.HeartRateSlopeBpmPerMinute).GreaterThanOrEqualTo(0)
-            .When(features => features.HeartRateSlopeBpmPerMinute.HasValue);
         RuleFor(features => features.RmssdMillis).GreaterThanOrEqualTo(0)
             .When(features => features.RmssdMillis.HasValue);
         RuleFor(features => features.SdnnMillis).GreaterThanOrEqualTo(0)
@@ -285,7 +290,8 @@ public sealed class SubmitSuspectedEventCommandValidator : AbstractValidator<Sub
 
 public sealed class SubmitSuspectedEventCommandHandler(
     ICurrentUser currentUser,
-    IWearableSyncRepository repository)
+    IWearableSyncRepository repository,
+    ISuspectedEventInferenceService inferenceService)
     : IRequestHandler<SubmitSuspectedEventCommand, SubmissionResponse>
 {
     public async Task<SubmissionResponse> Handle(SubmitSuspectedEventCommand command, CancellationToken cancellationToken)
@@ -297,6 +303,11 @@ public sealed class SubmitSuspectedEventCommandHandler(
             userId,
             command.SuspectedEvent,
             cancellationToken);
+        if (accepted)
+        {
+            await inferenceService.RunInferenceAsync(userId, command.SuspectedEvent, cancellationToken);
+        }
+
         return new SubmissionResponse(command.SuspectedEvent.EventId, accepted, !accepted);
     }
 }

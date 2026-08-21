@@ -1,11 +1,14 @@
+using System.Net.Http;
 using AnxietyWatch.Domain.Plans;
 using AnxietyWatch.Domain.Users;
 using AnxietyWatch.Application.Features.Support;
 using AnxietyWatch.Infrastructure.Caching;
+using AnxietyWatch.Infrastructure.MlInference;
 using AnxietyWatch.Infrastructure.Notifications;
 using AnxietyWatch.Infrastructure.Persistence;
 using AnxietyWatch.Infrastructure.Persistence.Mongo;
 using AnxietyWatch.Infrastructure.Security;
+using AnxietyWatch.Infrastructure.Wearables;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -58,11 +61,21 @@ public static class DependencyInjection
         });
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Notifications.ICaregiverAlertDispatcher, CaregiverAlertDispatcher>();
 
+        services.AddHttpClient<AnxietyWatch.Application.Abstractions.MlInference.IMlInferenceClient, MlInferenceHttpClient>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(GetMlInferenceTimeoutSeconds(configuration));
+        }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false
+        });
+        services.AddTransient<AnxietyWatch.Application.Features.Wearables.ISuspectedEventInferenceService, SuspectedEventInferenceService>();
+
         if (string.Equals(configuration["Persistence:Provider"], "Mongo", StringComparison.OrdinalIgnoreCase))
         {
             services.AddSingleton<MongoContext>();
             services.AddSingleton<IPlanRepository, MongoPlanRepository>();
             services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IWearableSyncRepository, MongoWearableSyncRepository>();
+            services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IEventInferenceRepository, MongoEventInferenceRepository>();
             services.AddSingleton<ISupportTicketRepository, MongoSupportTicketRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Billing.IBillingTransactionRepository, MongoBillingTransactionRepository>();
             services.AddSingleton<IUserRepository, MongoUserRepository>();
@@ -76,6 +89,7 @@ public static class DependencyInjection
         {
             services.AddSingleton<IPlanRepository, InMemoryPlanRepository>();
             services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IWearableSyncRepository, InMemoryWearableSyncRepository>();
+            services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IEventInferenceRepository, InMemoryEventInferenceRepository>();
             services.AddSingleton<ISupportTicketRepository, InMemorySupportTicketRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Billing.IBillingTransactionRepository, InMemoryBillingTransactionRepository>();
             services.AddSingleton<IUserRepository, InMemoryUserRepository>();
@@ -88,4 +102,9 @@ public static class DependencyInjection
 
         return services;
     }
+
+    private static int GetMlInferenceTimeoutSeconds(IConfiguration configuration) =>
+        int.TryParse(configuration["Ml:Inference:TimeoutSeconds"], out var seconds) && seconds > 0
+            ? seconds
+            : 10;
 }

@@ -28,6 +28,32 @@ public sealed class MongoWearableSyncRepository(MongoContext context) : IWearabl
     public Task<bool> TryStoreEventDecisionAsync(Guid userId, EventDecisionRequest decision, CancellationToken cancellationToken = default) =>
         TryInsertAsync(eventDecisions, decision.EventId, userId, decision, cancellationToken);
 
+    public async Task<TelemetryWindowResult> GetTelemetryWindowAsync(
+        Guid userId,
+        Guid deviceId,
+        Guid sessionId,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.And(
+            Builders<BsonDocument>.Filter.Eq("userId", userId.ToString()),
+            Builders<BsonDocument>.Filter.Eq("DeviceId", deviceId.ToString()),
+            Builders<BsonDocument>.Filter.Eq("SessionId", sessionId.ToString()));
+
+        var batches = new List<TelemetryBatchRequest>();
+        using var cursor = await telemetry.Find(filter).ToCursorAsync(cancellationToken);
+        while (await cursor.MoveNextAsync(cancellationToken))
+        {
+            foreach (var document in cursor.Current)
+            {
+                batches.Add(JsonSerializer.Deserialize<TelemetryBatchRequest>(document.ToJson())!);
+            }
+        }
+
+        return TelemetryWindowSelector.Select(batches, windowStart, windowEnd);
+    }
+
     private static async Task<bool> TryInsertAsync<T>(
         IMongoCollection<BsonDocument> collection,
         Guid id,
