@@ -8,6 +8,7 @@ using AnxietyWatch.Infrastructure.Notifications;
 using AnxietyWatch.Infrastructure.Persistence;
 using AnxietyWatch.Infrastructure.Persistence.Mongo;
 using AnxietyWatch.Infrastructure.Security;
+using AnxietyWatch.Infrastructure.Wearables;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -67,12 +68,14 @@ public static class DependencyInjection
         {
             AllowAutoRedirect = false
         });
+        services.AddTransient<AnxietyWatch.Application.Features.Wearables.ISuspectedEventInferenceService, SuspectedEventInferenceService>();
 
         if (string.Equals(configuration["Persistence:Provider"], "Mongo", StringComparison.OrdinalIgnoreCase))
         {
             services.AddSingleton<MongoContext>();
             services.AddSingleton<IPlanRepository, MongoPlanRepository>();
             services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IWearableSyncRepository, MongoWearableSyncRepository>();
+            services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IEventInferenceRepository, MongoEventInferenceRepository>();
             services.AddSingleton<ISupportTicketRepository, MongoSupportTicketRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Billing.IBillingTransactionRepository, MongoBillingTransactionRepository>();
             services.AddSingleton<IUserRepository, MongoUserRepository>();
@@ -86,6 +89,7 @@ public static class DependencyInjection
         {
             services.AddSingleton<IPlanRepository, InMemoryPlanRepository>();
             services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IWearableSyncRepository, InMemoryWearableSyncRepository>();
+            services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IEventInferenceRepository, InMemoryEventInferenceRepository>();
             services.AddSingleton<ISupportTicketRepository, InMemorySupportTicketRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Billing.IBillingTransactionRepository, InMemoryBillingTransactionRepository>();
             services.AddSingleton<IUserRepository, InMemoryUserRepository>();

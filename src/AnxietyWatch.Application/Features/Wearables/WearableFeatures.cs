@@ -292,7 +292,8 @@ public sealed class SubmitSuspectedEventCommandValidator : AbstractValidator<Sub
 
 public sealed class SubmitSuspectedEventCommandHandler(
     ICurrentUser currentUser,
-    IWearableSyncRepository repository)
+    IWearableSyncRepository repository,
+    ISuspectedEventInferenceService inferenceService)
     : IRequestHandler<SubmitSuspectedEventCommand, SubmissionResponse>
 {
     public async Task<SubmissionResponse> Handle(SubmitSuspectedEventCommand command, CancellationToken cancellationToken)
@@ -304,6 +305,11 @@ public sealed class SubmitSuspectedEventCommandHandler(
             userId,
             command.SuspectedEvent,
             cancellationToken);
+        if (accepted)
+        {
+            await inferenceService.RunInferenceAsync(userId, command.SuspectedEvent, cancellationToken);
+        }
+
         return new SubmissionResponse(command.SuspectedEvent.EventId, accepted, !accepted);
     }
 }
