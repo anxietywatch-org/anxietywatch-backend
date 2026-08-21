@@ -243,8 +243,6 @@ public sealed class SuspectedEventFeaturesRequestValidator : AbstractValidator<S
         RuleFor(features => features.ValidSampleRatio).InclusiveBetween(0, 1);
         RuleFor(features => features.LastSampleAgeSeconds).GreaterThanOrEqualTo(0);
         RuleFor(features => features.SampleCount).GreaterThanOrEqualTo(0);
-        RuleFor(features => features.HeartRateSlopeBpmPerMinute).GreaterThanOrEqualTo(0)
-            .When(features => features.HeartRateSlopeBpmPerMinute.HasValue);
         RuleFor(features => features.RmssdMillis).GreaterThanOrEqualTo(0)
             .When(features => features.RmssdMillis.HasValue);
         RuleFor(features => features.SdnnMillis).GreaterThanOrEqualTo(0)
