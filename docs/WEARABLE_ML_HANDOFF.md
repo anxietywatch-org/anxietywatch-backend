@@ -21,39 +21,24 @@ Connect the Galaxy Watch sensor pipeline through the Mobile Fog Node to the Back
 ## 2. Architecture Diagram
 
 ```
-┌─────────────┐     Telemetry Batches      ┌─────────────┐
-│   Galaxy    │ ─────────────────────────▶ │   Mobile    │
-│   Watch     │   (HR, IBI, Temp, Quality) │   Fog Node  │
-└─────────────┘                            └──────┬──────┘
-                                                   │
-                                                   ▼
-┌─────────────┐     Suspected Event           ┌─────────────┐
-│   Galaxy    │ ─────────────────────────▶ │   Backend   │
-│   Watch     │   (eventId, deviceId,        │  (B4)       │
-└─────────────┘    sessionId, detectedAt,     │  ┌────────┐ │
-                   features, baseline)        │  │  ML    │ │
-                                               │  │ Client │ │
-                                               │  └────┬───┘ │
-                                                   │       │
-                                                   ▼       ▼
-                                         ┌───────────────────────┐
-                                         │   Azure ML (v0.1.0)   │
-                                         │  POST /predict/window │
-                                         │  X-Api-Key, HTTPS     │
-                                         └───────────┬───────────┘
-                                                     │
-                                                     ▼
-                                         ┌───────────────────────┐
-                                         │   event_inferences    │
-                                         │  (Mongo, eventId PK)  │
-                                         └───────────┬───────────┘
-                                                     │
-┌─────────────┐     Decision (SAME eventId)   ┌──────┴──────┐
-│   Galaxy    │ ─────────────────────────▶ │   Backend   │
-│   Watch     │   (ACTIVITY_CONFIRMED /      │  (store     │
-└─────────────┘    USER_OK / SUPPORT_REQ)     │  decision)  │
-                                               └─────────────┘
+Wear/Fog
+   ↓
+Backend
+   ├──→ MongoDB
+   │      telemetry persistence / query
+   │
+   └──→ raw event window over HTTPS
+              ↓
+            ML API
+              ↓
+      canonical preprocessing
+              ↓
+           features
+              ↓
+            model
 ```
+
+**ML NEVER reads Backend Mongo directly.** Backend owns persistence/query and sends the raw event window to ML over HTTPS.
 
 ---
 
@@ -213,7 +198,7 @@ Connect the Galaxy Watch sensor pipeline through the Mobile Fog Node to the Back
 - `features.validSampleRatio` ∈ [0,1]
 - `features.lastSampleAgeSeconds` ≥ 0
 - `features.sampleCount` ≥ 0
-- **`features.heartRateSlopeBpmPerMinute` ≥ 0** (current validator — see Part J)
+- `features.heartRateSlopeBpmPerMinute` is a signed regression slope (negative values valid)
 - `features.rmssdMillis` ≥ 0, `features.sdnnMillis` ≥ 0 if present
 - `baseline` fields ≥ 0
 
@@ -428,21 +413,43 @@ Current Wear/Fog has ACK/retry for: `telemetry`, `sos`, `sos-cancel`.
 
 **⚠️ DO NOT** automatically convert Samsung Health exercise detection into `ACTIVITY_CONFIRMED` label. That is a **USER RESPONSE / supervised label**. Sensor-detected exercise must not fabricate ground truth.
 
+**Important:** This recommendation is a **PRODUCT/DETECTOR policy recommendation**, NOT an ML contract requirement. The critical ML requirements are: correct raw telemetry, telemetry-before-suspected ordering, same eventId for suspected/decision, supported user decision enum, no accidental SOS routing. Exercise suppression can be implemented for MVP UX/data-quality reasons, but must not be confused with supervised ground truth.
+
 ---
 
 ## 15. Raw Telemetry Requirements (ML Compatibility)
 
-| Field | Status | Notes |
-|-------|--------|-------|
-| `timestamp` | ✅ AVAILABLE CORRECTLY | ISO 8601 / DateTimeOffset |
-| `heartRateBpm` | ✅ AVAILABLE CORRECTLY | Samsung passive HR |
-| `ibiMs` | ⚠️ AVAILABLE BUT SPARSE | Samsung provides intermittently |
-| `skinTemperatureCelsius` | ⚠️ AVAILABLE BUT OFTEN NULL | Samsung skin temp sensor |
-| `quality.heartRate` | ✅ AVAILABLE CORRECTLY | Derived from sensor confidence |
-| `quality.ibi` | ✅ AVAILABLE CORRECTLY | Derived |
-| `quality.wearingState` | ✅ AVAILABLE CORRECTLY | `onBody`/`offBody`/`unknown` |
-| `accelerometer` | ✅ AVAILABLE | Not used by current ML |
-| `ambientTemperatureCelsius` | ❌ NOT CAPTURED | Not used by current ML |
+Current `FeatureBuilder` v0.1.0 directly uses these fields from the raw telemetry window:
+
+- `timestamp`
+- `heart_rate_bpm`
+- `ibi_ms`
+- `skin_temperature_celsius`
+- `quality_heart_rate`
+
+Current 16-feature computation includes:
+- HR statistics (mean, max, slope, delta from baseline)
+- HRV (RMSSD, SDNN)
+- IBI availability/coverage
+- Skin-temp mean
+- Heart-rate quality ratios
+- Valid sample ratio
+- Window duration
+- Sample count
+
+`quality_ibi` and `quality_wearing_state` are present in the internal telemetry contract / flattened dataframe, but **do NOT affect ANY current v0.1.0 feature or filtering behavior**. They are accepted/transported metadata, NOT currently part of the model feature vector.
+
+| Field | Transport Status | ML Impact |
+|-------|------------------|-----------|
+| `timestamp` | ✅ AVAILABLE | Required |
+| `heartRateBpm` | ✅ AVAILABLE | Required (≥30% presence) |
+| `ibiMs` | ⚠️ AVAILABLE BUT SPARSE | Used if present |
+| `skinTemperatureCelsius` | ⚠️ OFTEN NULL | Used if present |
+| `quality.heartRate` | ✅ AVAILABLE | Required |
+| `quality.ibi` | ✅ TRANSPORTED | Not currently used by v0.1.0 features |
+| `quality.wearingState` | ⚠️ HARDCODED "unknown" | Not currently used by v0.1.0 features |
+| `accelerometer` | ✅ AVAILABLE | **NOT used by current ML** |
+| `ambientTemperatureCelsius` | ❌ NOT CAPTURED | NOT used by current ML |
 
 **Current ML minimum for inference:**
 - ≥ 10 samples in 60s window
@@ -450,21 +457,32 @@ Current Wear/Fog has ACK/retry for: `telemetry`, `sos`, `sos-cancel`.
 
 **DO NOT block ML if** accelerometer/ambient/derived features absent — ML doesn't use them.
 
-**FLAG if** HR/IBI/timestamp/skin temp/quality loss — these DO affect feature construction.
+**FLAG if** HR/IBI/timestamp/skin temp/quality.heartRate loss — these DO affect feature construction.
 
 ---
 
 ## 16. Real Sampling Rate Assessment
 
-| Signal | Approx. Cadence | 60s Window Expected Samples | Meets ≥10? | Meets ≥30% HR? |
-|--------|-----------------|----------------------------|------------|----------------|
-| HR (passive) | ~1/5–10s (Samsung) | 6–12 | **BORDERLINE** | ✅ if present |
-| IBI | Intermittent | 0–20 | Variable | N/A |
-| Skin Temp | ~1/10–60s | 1–6 | Variable | N/A |
+| Signal | Status |
+|--------|--------|
+| HR (passive) | **UNKNOWN / MUST MEASURE ON TARGET GALAXY WATCH** |
+| IBI | availability/cadence device-dependent; **MUST MEASURE** |
+| Skin temperature | availability/cadence device-dependent; **MUST MEASURE** |
 
-**Assessment:** Samsung passive HR can be **sparser than 10 samples/60s** in real conditions. This is a **prominent risk for first real-watch test**. If actual window has <10 samples → `SkippedNoTelemetry` or ML `VALIDATION` failure.
+**Do NOT state Samsung cadences as established facts** unless the current application code or an authoritative API contract explicitly guarantees them. The application code does not by itself prove the real hardware cadence.
 
-**Mitigation:** Consider reducing lookback or accepting lower sample count for MVP; flag for real-device validation.
+**Current acceptance requirement remains:**
+- ≥ 10 samples in the event window
+- ≥ 30% HR presence
+
+**The first real-device test MUST measure actual:**
+- samples per 60 s
+- HR-present samples
+- IBI-bearing samples
+- temperature-bearing samples
+- time gaps between measurements
+
+**No invented cadence.**
 
 ---
 
@@ -472,7 +490,7 @@ Current Wear/Fog has ACK/retry for: `telemetry`, `sos`, `sos-cancel`.
 
 | Category | Fields | Used by ML v0.1.0? |
 |----------|--------|---------------------|
-| **RAW telemetry (ML input)** | `timestamp`, `heartRateBpm`, `ibiMs`, `skinTemperatureCelsius`, `quality.*` | ✅ YES |
+| **RAW telemetry (ML input)** | `timestamp`, `heartRateBpm`, `ibiMs`, `skinTemperatureCelsius`, `quality.heartRate` | ✅ YES |
 | **Watch derived (audit only)** | `features.*`, `baseline.*` in suspected event | ❌ NO |
 | **Watch sensor not sent** | accelerometer x/y/z, ambient temp | ❌ NO |
 | **ML-internal** | 16-feature vector, bundle-derived threshold | Internal |
@@ -503,7 +521,7 @@ Do NOT send other enum values — will return 400.
 
 ---
 
-## 19. Negative Slope Contract Mismatch (Part J)
+## 19. Negative Slope Contract Mismatch
 
 **ML:** `hr_slope_bpm_per_minute` can legitimately be **negative** (HR decreasing).
 
@@ -519,7 +537,7 @@ RuleFor(features => features.HeartRateSlopeBpmPerMinute).GreaterThanOrEqualTo(0)
 
 ---
 
-## 20. ACK/Retry Gap Analysis (Part G)
+## 20. ACK/Retry Gap Analysis
 
 | Deliverable | Fog Enqueue | HTTP Mapping | Cloud ACK | Watch ACK | Retry | Cleanup |
 |-------------|-------------|--------------|-----------|-----------|-------|---------|
@@ -533,13 +551,47 @@ RuleFor(features => features.HeartRateSlopeBpmPerMinute).GreaterThanOrEqualTo(0)
 
 ---
 
-## 21. File-by-File Changes Expected
+## 21. Low-Sample Mitigation — Correct Approach
+
+**DO NOT** suggest reducing lookback, changing min-samples, or HR coverage requirement casually.
+
+Reducing a 60-second lookback can REDUCE sample count further.
+
+The serving pipeline derives canonical runtime behavior from the serialized ML bundle for training-serving parity.
+
+**Correct mitigation:**
+1. **FIRST** measure real-device telemetry.
+2. If the real Watch consistently cannot satisfy the deployed bundle:
+   - STOP and perform a deliberate ML/data-contract review.
+3. Potential later solutions may include:
+   - changing acquisition strategy/cadence
+   - changing canonical window configuration
+   - retraining/re-versioning the bundle
+   but these require controlled evaluation.
+
+**Wear/Fog must NOT independently change ML semantics.**
+
+---
+
+## 22. Watch Features/Baseline — Transmission Status
+
+**AVAILABLE LOCALLY ON WATCH** ≠ **CURRENTLY TRANSMITTED END-TO-END.**
+
+The deferred bug exists precisely because the corrected suspected-event route has NOT yet been implemented in Wear/Fog.
+
+Do NOT mark Watch DerivedFeatures/Baseline as already delivered to Backend.
+
+Expected future role: audit/parity/detector metadata only. NOT ML model input.
+
+---
+
+## 23. File-by-File Changes Expected
 
 ### apps/wear (Watch)
 
 | File | Change |
 |------|--------|
-| `WearRuntime` / `PreliminaryDetector` | Add exercise suppression (A) |
+| `WearRuntime` / `PreliminaryDetector` | Add exercise suppression (A) — product/detector policy, not ML contract |
 | `PendingEvent` | Emit `SuspectedEventRequest` with `eventId`, `detectedAt` |
 | `PendingEvent` | Emit `EventDecisionRequest` with **same** `eventId`, `respondedAt` |
 | `Outbox` / `MessageClient` | Add `suspected`/`decision` kinds, ACK handling |
@@ -557,7 +609,7 @@ RuleFor(features => features.HeartRateSlopeBpmPerMinute).GreaterThanOrEqualTo(0)
 
 ---
 
-## 22. Acceptance Test Checklist (Real Watch)
+## 24. Acceptance Test Checklist (Real Watch)
 
 | Test | Description | Pass Criteria |
 |------|-------------|---------------|
@@ -573,7 +625,7 @@ RuleFor(features => features.HeartRateSlopeBpmPerMinute).GreaterThanOrEqualTo(0)
 
 ---
 
-## 23. Common Failure Cases
+## 25. Common Failure Cases
 
 | Failure | Cause | Mitigation |
 |---------|-------|------------|
@@ -586,7 +638,7 @@ RuleFor(features => features.HeartRateSlopeBpmPerMinute).GreaterThanOrEqualTo(0)
 
 ---
 
-## 24. Non-Clinical Disclaimer
+## 26. Non-Clinical Disclaimer
 
 **Model 0.1.0 is synthetic-data / academic MVP only.**
 
@@ -597,7 +649,7 @@ RuleFor(features => features.HeartRateSlopeBpmPerMinute).GreaterThanOrEqualTo(0)
 
 ---
 
-## 25. Team Ownership Split
+## 27. Team Ownership Split
 
 | Layer | Owner | Key Responsibilities |
 |-------|-------|---------------------|
@@ -608,23 +660,23 @@ RuleFor(features => features.HeartRateSlopeBpmPerMinute).GreaterThanOrEqualTo(0)
 
 ---
 
-## 26. Recommended Release Tags (DO NOT CREATE)
+## 28. Recommended Release Tags (DO NOT CREATE)
 
 - ML repo: `technical-ml-mvp-v1` → `abb1548`
 - Backend repo: `technical-ml-integration-mvp-v1` → `facd311`
 
 ---
 
-## 27. OpenAPI Status
+## 29. OpenAPI
 
-Backend `docs/api/openapi.yaml` should be regenerated from current `develop` to reflect:
+Backend does not currently have a checked-in `docs/api/openapi.yaml`. The contracts above (Section 7) are the authoritative reference. If an OpenAPI spec is added later, it must be generated from current `develop` code to reflect:
 - `POST /api/v1/events/suspected`
 - `POST /api/v1/events/decision`
 - Updated `SuspectedEventRequest` / `EventDecisionRequest` schemas
 
 ---
 
-## 28. Confirmation
+## 30. Confirmation
 
 - ✅ No Wear/mobile application code changed in this task
 - ✅ No Azure/DigitalOcean changes
@@ -633,11 +685,12 @@ Backend `docs/api/openapi.yaml` should be regenerated from current `develop` to 
 
 ---
 
-**GO / NO-GO for starting real-device integration:**
+## 31. GO / NO-GO for starting real-device integration
 
 **GO** — Architecture is complete, contracts are stable, isolated acceptance passed.
+
 **BLOCKERS to fix first:**
 1. Backend negative-slope validator (Part J)
 2. Fog `suspected`/`decision` deliverable kinds + ordering + ACK (Parts F, G)
-3. Wear exercise suppression rule (Part E)
-4. Real-device telemetry coverage validation (Part L)
+3. Wear exercise suppression rule (Part E) — product/detector policy
+4. Real-device telemetry coverage validation (Part 16)
