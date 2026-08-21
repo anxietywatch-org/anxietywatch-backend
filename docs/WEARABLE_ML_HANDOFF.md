@@ -1,6 +1,6 @@
 # AnxietyWatch — Wear/Fog → Backend → ML Handoff
 
-**Version:** Technical ML MVP Complete (Backend develop `facd311`, ML develop `abb1548`)
+**Version:** Technical ML MVP Complete (Backend develop `4c37502`, ML develop `abb1548`)
 **Date:** 2026-08-21
 **Audience:** Wear/Fog teammates implementing real-device integration
 
@@ -521,19 +521,19 @@ Do NOT send other enum values — will return 400.
 
 ---
 
-## 19. Negative Slope Contract Mismatch
+## 19. Negative Slope Contract — RESOLVED
 
 **ML:** `hr_slope_bpm_per_minute` can legitimately be **negative** (HR decreasing).
 
-**Backend validator (current):** `SuspectedEventFeaturesRequestValidator` line 246:
-```csharp
-RuleFor(features => features.HeartRateSlopeBpmPerMinute).GreaterThanOrEqualTo(0)
-    .When(features => features.HeartRateSlopeBpmPerMinute.HasValue);
-```
+**Backend validator (fixed):** The `GreaterThanOrEqualTo(0)` restriction was removed from `SuspectedEventFeaturesRequestValidator` (PR #36).
 
-**Verdict:** **PREREQUISITE BUG** — Backend rejects valid Watch-derived negative slopes.
+**Current behavior:**
+- **Negative** (e.g., -5.5 bpm/min) → **VALID** — decreasing HR slope
+- **Zero** → **VALID**
+- **Positive** → **VALID**
+- **Null** → **VALID**
 
-**Fix:** Remove `GreaterThanOrEqualTo(0)` for `HeartRateSlopeBpmPerMinute` in `SuspectedEventFeaturesRequestValidator`. Do NOT tell Wear to clamp.
+**Wear MUST NOT clamp negative values.** This field remains detector/audit metadata and is **NOT** the canonical ML model input.
 
 ---
 
@@ -633,7 +633,6 @@ Expected future role: audit/parity/detector metadata only. NOT ML model input.
 | `VALIDATION` from ML | <10 samples or <30% HR | Ensure sufficient telemetry coverage |
 | Duplicate inference missing | Request cancelled after event stored | Documented MVP limitation (B5+) |
 | 400 on decision | Invalid `response` enum | Only send supported 3 values |
-| Negative slope 400 | Backend validator bug | Fix backend validator (Part J) |
 | SOS for detector event | Wrong endpoint | Use `/events/suspected`, not `/sos/trigger` |
 
 ---
@@ -655,7 +654,7 @@ Expected future role: audit/parity/detector metadata only. NOT ML model input.
 |-------|-------|---------------------|
 | **Wear** | Watch teammate | Sensor pipeline, detector, event emission, ACK, `eventId` reuse |
 | **Mobile/Fog** | Mobile teammate | Deliverable kinds, ordering, enrichment, outbox, Backend calls, ACK return |
-| **Backend** | Backend team | **Already implemented** (unless validator bug found) |
+| **Backend** | Backend team | **Already implemented** |
 | **ML** | ML team | **No changes expected** for this integration |
 
 ---
@@ -663,7 +662,7 @@ Expected future role: audit/parity/detector metadata only. NOT ML model input.
 ## 28. Recommended Release Tags (DO NOT CREATE)
 
 - ML repo: `technical-ml-mvp-v1` → `abb1548`
-- Backend repo: `technical-ml-integration-mvp-v1` → `facd311`
+- Backend repo: `technical-ml-integration-mvp-v1` → `4c37502`
 
 ---
 
@@ -690,7 +689,7 @@ Backend does not currently have a checked-in `docs/api/openapi.yaml`. The contra
 **GO** — Architecture is complete, contracts are stable, isolated acceptance passed.
 
 **BLOCKERS to fix first:**
-1. Backend negative-slope validator (Part J)
-2. Fog `suspected`/`decision` deliverable kinds + ordering + ACK (Parts F, G)
+1. Fog `suspected`/`decision` deliverable kinds + ordering + durable ACK (Parts F, G)
+2. Wear event emission/routing correction (suspected/decision vs SOS)
 3. Wear exercise suppression rule (Part E) — product/detector policy
 4. Real-device telemetry coverage validation (Part 16)
