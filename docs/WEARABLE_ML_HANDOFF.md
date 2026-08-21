@@ -84,7 +84,7 @@ Backend
 - Secure ML HTTP client (B3) — HTTPS, X-Api-Key, X-Correlation-Id, retries
 - ML failure safety — never rejects suspected event
 - Production Compose ML wiring (`docker-compose.prod.yml`)
-- Full test suite (196/196 pass)
+- Full test suite (203/203 pass)
 
 ---
 
