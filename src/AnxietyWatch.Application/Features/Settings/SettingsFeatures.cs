@@ -126,7 +126,7 @@ public sealed class UpdateSettingsCommandHandler(ICurrentUser currentUser, IUser
     public async Task<SettingsResponse> Handle(UpdateSettingsCommand command, CancellationToken cancellationToken)
     {
         var user = await UpdateProfileCommandHandler.RequireUser(currentUser, users, cancellationToken);
-        if (command.PrivateMode && currentUser.PlanId is not ("individual" or "family" or "professional"))
+        if (command.PrivateMode && !CurrentPlanAuthority.AllowsPrivateMode(user.PlanId))
         {
             throw new ForbiddenException("Private mode requires an individual plan or higher.");
         }

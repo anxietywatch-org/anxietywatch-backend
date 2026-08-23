@@ -3,6 +3,7 @@ using AnxietyWatch.Application.Abstractions.Security;
 using AnxietyWatch.Application.Abstractions.Time;
 using AnxietyWatch.Application.Common;
 using AnxietyWatch.Domain.Tokens;
+using AnxietyWatch.Domain.Users;
 using FluentValidation;
 using MediatR;
 
@@ -30,19 +31,15 @@ public sealed class CreateTokenCommandValidator : AbstractValidator<CreateTokenC
 public sealed class CreateTokenCommandHandler(
     ICurrentUser currentUser,
     ILinkTokenRepository tokens,
+    IUserRepository users,
     ISystemClock clock)
     : IRequestHandler<CreateTokenCommand, TokenResponse>
 {
     public async Task<TokenResponse> Handle(CreateTokenCommand command, CancellationToken cancellationToken)
     {
         RequireAuthenticatedUser(currentUser);
-        var maximum = currentUser.PlanId?.ToLowerInvariant() switch
-        {
-            "free" or "individual" => 1,
-            "family" => 5,
-            "professional" => 20,
-            _ => 0
-        };
+        var planId = await CurrentPlanAuthority.RequirePlanIdAsync(currentUser, users, cancellationToken);
+        var maximum = CurrentPlanAuthority.TokenLimit(planId);
         if (maximum == 0)
         {
             throw new ForbiddenException("The current plan cannot create tokens.");
@@ -87,19 +84,14 @@ public sealed record GetTokensQuery : IRequest<IReadOnlyList<TokenResponse>>;
 
 public sealed record GetTokenQuotaQuery : IRequest<TokenQuotaResponse>;
 
-public sealed class GetTokenQuotaQueryHandler(ICurrentUser currentUser, ILinkTokenRepository tokens)
+public sealed class GetTokenQuotaQueryHandler(ICurrentUser currentUser, ILinkTokenRepository tokens, IUserRepository users)
     : IRequestHandler<GetTokenQuotaQuery, TokenQuotaResponse>
 {
     public async Task<TokenQuotaResponse> Handle(GetTokenQuotaQuery request, CancellationToken cancellationToken)
     {
         CreateTokenCommandHandler.RequireAuthenticatedUser(currentUser);
-        var limit = currentUser.PlanId?.ToLowerInvariant() switch
-        {
-            "free" or "individual" => 1,
-            "family" => 5,
-            "professional" => 20,
-            _ => 0
-        };
+        var planId = await CurrentPlanAuthority.RequirePlanIdAsync(currentUser, users, cancellationToken);
+        var limit = CurrentPlanAuthority.TokenLimit(planId);
         var used = (await tokens.GetAsync(currentUser.UserId, cancellationToken))
             .Count(token => token.Status is not TokenStatus.Deleted);
         return new TokenQuotaResponse(limit, used, Math.Max(0, limit - used));
