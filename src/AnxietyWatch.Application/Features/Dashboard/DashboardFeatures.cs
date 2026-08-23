@@ -2,6 +2,7 @@ using AnxietyWatch.Application.Abstractions.Security;
 using AnxietyWatch.Application.Abstractions.Time;
 using AnxietyWatch.Application.Common;
 using AnxietyWatch.Domain.Episodes;
+using AnxietyWatch.Domain.Users;
 using FluentValidation;
 using MediatR;
 
@@ -22,6 +23,7 @@ public sealed record GetDashboardSummaryQuery : IRequest<DashboardSummaryRespons
 public sealed class GetDashboardSummaryQueryHandler(
     ICurrentUser currentUser,
     IEpisodeRepository episodes,
+    IUserRepository users,
     ISystemClock clock)
     : IRequestHandler<GetDashboardSummaryQuery, DashboardSummaryResponse>
 {
@@ -37,11 +39,11 @@ public sealed class GetDashboardSummaryQueryHandler(
         var previous = recent.Skip(1).FirstOrDefault()?.Intensity ?? current;
         var weekStart = StartOfWeek(now);
         var weeklyUsed = recent.Count(item => item.Date >= weekStart);
+        var planId = await CurrentPlanAuthority.RequirePlanIdAsync(currentUser, users, cancellationToken);
 
         return new DashboardSummaryResponse(
             new AnxietyLevelResponse(current, current > previous ? "up" : current < previous ? "down" : "stable"),
-            new WeeklyRecordsResponse(weeklyUsed,
-                string.Equals(currentUser.PlanId, "free", StringComparison.OrdinalIgnoreCase) ? 5 : null),
+            new WeeklyRecordsResponse(weeklyUsed, CurrentPlanAuthority.WeeklyEpisodeLimit(planId)),
             CalculateStreak(recent, now),
             0);
     }
@@ -123,6 +125,7 @@ public sealed class CreateEpisodeCommandValidator : AbstractValidator<CreateEpis
 public sealed class CreateEpisodeCommandHandler(
     ICurrentUser currentUser,
     IEpisodeRepository episodes,
+    IUserRepository users,
     ISystemClock clock)
     : IRequestHandler<CreateEpisodeCommand, EpisodeResponse>
 {
@@ -130,7 +133,8 @@ public sealed class CreateEpisodeCommandHandler(
     {
         GetDashboardSummaryQueryHandler.RequireAuthenticatedUser(currentUser);
         var now = clock.UtcNow;
-        if (string.Equals(currentUser.PlanId, "free", StringComparison.OrdinalIgnoreCase) &&
+        var planId = await CurrentPlanAuthority.RequirePlanIdAsync(currentUser, users, cancellationToken);
+        if (CurrentPlanAuthority.WeeklyEpisodeLimit(planId) is 5 &&
             await episodes.CountAsync(currentUser.UserId, GetDashboardSummaryQueryHandler.StartOfWeek(now), cancellationToken) >= 5)
         {
             throw new ForbiddenException("The weekly episode quota for the free plan has been reached.");
