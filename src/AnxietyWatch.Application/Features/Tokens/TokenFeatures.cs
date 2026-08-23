@@ -55,7 +55,7 @@ public sealed class CreateTokenCommandHandler(
         return Map(token);
     }
 
-    private static string CreateCode()
+    internal static string CreateCode()
     {
         const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         Span<char> segments = stackalloc char[12];
@@ -109,6 +109,50 @@ public sealed class GetTokensQueryHandler(ICurrentUser currentUser, ILinkTokenRe
     }
 }
 
+public sealed record RotateTokenCommand(Guid Id) : IRequest<TokenResponse>;
+
+public sealed class RotateTokenCommandHandler(
+    ICurrentUser currentUser,
+    ILinkTokenRepository tokens,
+    ISystemClock clock)
+    : IRequestHandler<RotateTokenCommand, TokenResponse>
+{
+    public async Task<TokenResponse> Handle(RotateTokenCommand command, CancellationToken cancellationToken)
+    {
+        CreateTokenCommandHandler.RequireAuthenticatedUser(currentUser);
+        var token = await tokens.GetByIdAsync(command.Id, cancellationToken)
+            ?? throw new NotFoundException("Token not found.");
+        if (token.UserId != currentUser.UserId)
+        {
+            throw new ForbiddenException("The token does not belong to the authenticated user.");
+        }
+
+        if (token.Status == TokenStatus.Accepted)
+        {
+            throw new ConflictException("An accepted token cannot be rotated.");
+        }
+
+        if (token.Status is TokenStatus.Deleted or TokenStatus.Expired)
+        {
+            throw new ConflictException("The token is no longer available.");
+        }
+
+        var rotated = await tokens.TryRotateAsync(
+            command.Id,
+            currentUser.UserId,
+            token.Code,
+            CreateTokenCommandHandler.CreateCode(),
+            clock.UtcNow.AddDays(30),
+            cancellationToken);
+        if (rotated is null)
+        {
+            throw new ConflictException("The token state changed before the request completed.");
+        }
+
+        return CreateTokenCommandHandler.Map(rotated);
+    }
+}
+
 public sealed record DeleteTokenCommand(Guid Id) : IRequest<bool>;
 
 public sealed class DeleteTokenCommandHandler(ICurrentUser currentUser, ILinkTokenRepository tokens)
@@ -129,8 +173,11 @@ public sealed class DeleteTokenCommandHandler(ICurrentUser currentUser, ILinkTok
             throw new ConflictException("An accepted token cannot be deleted.");
         }
 
-        token.MarkDeleted();
-        await tokens.UpdateAsync(token, cancellationToken);
+        if (!await tokens.TryDeleteAsync(command.Id, token.Code, cancellationToken))
+        {
+            throw new ConflictException("The token state changed before the request completed.");
+        }
+
         return true;
     }
 }
@@ -199,7 +246,7 @@ public sealed class AcceptTokenCommandHandler(
             throw new GoneException("The token has expired.");
         }
 
-        if (!await tokens.TryAcceptAsync(command.Id, currentUser.UserId, now, cancellationToken))
+        if (!await tokens.TryAcceptAsync(command.Id, token.Code, currentUser.UserId, now, cancellationToken))
         {
             throw new ConflictException("The token has already been used.");
         }

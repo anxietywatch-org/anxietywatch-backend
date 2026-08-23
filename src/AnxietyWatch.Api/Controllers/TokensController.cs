@@ -38,6 +38,11 @@ public sealed class TokensController(ISender sender) : ControllerBase
         Ok(await sender.Send(new GetTokenQuotaQuery(), cancellationToken));
 
     [Authorize]
+    [HttpPost("{id:guid}/rotate")]
+    public async Task<ActionResult<TokenResponse>> Rotate(Guid id, CancellationToken cancellationToken) =>
+        Ok(await sender.Send(new RotateTokenCommand(id), cancellationToken));
+
+    [Authorize]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
