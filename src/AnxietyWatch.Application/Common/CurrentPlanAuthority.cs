@@ -32,5 +32,5 @@ internal static class CurrentPlanAuthority
     public static int? WeeklyEpisodeLimit(string planId) =>
         string.Equals(planId, "free", StringComparison.OrdinalIgnoreCase) ? 5 : null;
 
-    public static bool AllowsPrivateMode(string planId) => planId is "individual" or "family" or "professional";
+    public static bool AllowsPrivateMode(string planId) => planId.ToLowerInvariant() is "individual" or "family" or "professional";
 }
