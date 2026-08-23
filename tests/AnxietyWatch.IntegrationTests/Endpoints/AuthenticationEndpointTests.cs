@@ -352,6 +352,143 @@ public sealed class AuthenticationEndpointTests(CustomWebApplicationFactory fact
         status!.EmailVerified.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task EmailAvailability_AvailableEmail_ReturnsAvailableTrue()
+    {
+        using var client = factory.CreateClient();
+        var email = $"{Guid.NewGuid():N}@example.test";
+
+        var response = await client.PostAsJsonAsync("/api/auth/email-availability", new { email });
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<EmailAvailabilityResponse>();
+        body!.Available.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task EmailAvailability_ExistingEmail_ReturnsAvailableFalse()
+    {
+        using var client = factory.CreateClient();
+        var email = $"{Guid.NewGuid():N}@example.test";
+        await client.PostAsJsonAsync("/api/auth/register", new
+        {
+            fullName = "Existing User",
+            email,
+            password = "Password1",
+            planId = "free",
+            billingCycle = "monthly",
+            paymentMethodToken = (string?)null
+        });
+
+        var response = await client.PostAsJsonAsync("/api/auth/email-availability", new { email });
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<EmailAvailabilityResponse>();
+        body!.Available.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task EmailAvailability_CaseInsensitiveLookup_ReturnsAvailableFalse()
+    {
+        using var client = factory.CreateClient();
+        var registeredEmail = "User@Example.com";
+        await client.PostAsJsonAsync("/api/auth/register", new
+        {
+            fullName = "Case Insensitive User",
+            email = registeredEmail,
+            password = "Password1",
+            planId = "free",
+            billingCycle = "monthly",
+            paymentMethodToken = (string?)null
+        });
+
+        var response = await client.PostAsJsonAsync("/api/auth/email-availability", new { email = "user@example.com" });
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<EmailAvailabilityResponse>();
+        body!.Available.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task EmailAvailability_WhitespaceNormalization_ReturnsAvailableFalse()
+    {
+        using var client = factory.CreateClient();
+        var registeredEmail = "user@example.com";
+        await client.PostAsJsonAsync("/api/auth/register", new
+        {
+            fullName = "Whitespace User",
+            email = registeredEmail,
+            password = "Password1",
+            planId = "free",
+            billingCycle = "monthly",
+            paymentMethodToken = (string?)null
+        });
+
+        var response = await client.PostAsJsonAsync("/api/auth/email-availability", new { email = "  USER@EXAMPLE.COM  " });
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<EmailAvailabilityResponse>();
+        body!.Available.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task EmailAvailability_InvalidEmail_Returns400()
+    {
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/auth/email-availability", new { email = "not-an-email" });
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task EmailAvailability_EmptyEmail_Returns400()
+    {
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/auth/email-availability", new { email = "" });
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task EmailAvailability_AdvisoryRace_RegisterStillEnforcesUniqueness()
+    {
+        using var client = factory.CreateClient();
+        var email = $"{Guid.NewGuid():N}@example.test";
+
+        var check1 = await client.PostAsJsonAsync("/api/auth/email-availability", new { email });
+        check1.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        (await check1.Content.ReadFromJsonAsync<EmailAvailabilityResponse>())!.Available.Should().BeTrue();
+
+        var register1 = await client.PostAsJsonAsync("/api/auth/register", new
+        {
+            fullName = "First User",
+            email,
+            password = "Password1",
+            planId = "free",
+            billingCycle = "monthly",
+            paymentMethodToken = (string?)null
+        });
+        register1.StatusCode.Should().Be(System.Net.HttpStatusCode.Created);
+
+        var register2 = await client.PostAsJsonAsync("/api/auth/register", new
+        {
+            fullName = "Second User",
+            email,
+            password = "Password1",
+            planId = "free",
+            billingCycle = "monthly",
+            paymentMethodToken = (string?)null
+        });
+
+        register2.StatusCode.Should().Be(System.Net.HttpStatusCode.Conflict);
+        var problem = await register2.Content.ReadFromJsonAsync<ProblemResponse>();
+        problem!.Title.Should().Be("The email is already registered.");
+    }
+
+    private sealed record EmailAvailabilityResponse(bool Available);
+
     private sealed record AuthResponse(string Token, UserResponse User);
 
     private sealed record UserResponse(

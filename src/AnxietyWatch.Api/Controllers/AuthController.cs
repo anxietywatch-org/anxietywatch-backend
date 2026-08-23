@@ -79,10 +79,19 @@ public sealed class AuthController(ISender sender) : ControllerBase
         CancellationToken cancellationToken) =>
         Ok(new { message = await sender.Send(command, cancellationToken) });
 
-    [AllowAnonymous]
+[AllowAnonymous]
     [HttpPost("verify-email/confirm")]
     public async Task<ActionResult<object>> ConfirmVerification(
         ConfirmEmailCommand command,
         CancellationToken cancellationToken) =>
-        Ok(new { message = await sender.Send(command, cancellationToken) });
+    Ok(new { message = await sender.Send(command, cancellationToken) });
+
+    [AllowAnonymous]
+    [HttpPost("email-availability")]
+    [ProducesResponseType<EmailAvailabilityResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<EmailAvailabilityResponse>> CheckEmailAvailability(
+        [FromBody] CheckEmailAvailabilityCommand command,
+        CancellationToken cancellationToken) =>
+    Ok(await sender.Send(command, cancellationToken));
 }
