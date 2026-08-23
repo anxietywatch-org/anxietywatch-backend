@@ -81,17 +81,19 @@ public sealed record GetBillingSummaryQuery : IRequest<BillingSummaryResponse>;
 
 public sealed class GetBillingSummaryQueryHandler(
     ICurrentUser currentUser,
-    IBillingTransactionRepository transactions)
+    IBillingTransactionRepository transactions,
+    IUserRepository users)
     : IRequestHandler<GetBillingSummaryQuery, BillingSummaryResponse>
 {
     public async Task<BillingSummaryResponse> Handle(GetBillingSummaryQuery request, CancellationToken cancellationToken)
     {
         if (!currentUser.IsAuthenticated || currentUser.UserId == Guid.Empty)
             throw new UnauthorizedApplicationException("Authentication is required.");
+        var planId = await CurrentPlanAuthority.RequirePlanIdAsync(currentUser, users, cancellationToken);
         var items = (await transactions.GetByUserAsync(currentUser.UserId, cancellationToken))
             .Select(Map).ToArray();
         return new BillingSummaryResponse(
-            currentUser.PlanId ?? "free",
+            planId,
             items.FirstOrDefault()?.BillingCycle ?? "monthly",
             "active",
             items.FirstOrDefault(),
