@@ -236,6 +236,72 @@ public sealed class MongoCorePersistenceTests : IClassFixture<MongoDbContainerFi
     }
 
     [Fact]
+    public async Task LinkTokenRepository_RotateAndAcceptConcurrently_OnlyOneTransitionWins()
+    {
+        var ownerId = Guid.NewGuid();
+        var acceptedBy = Guid.NewGuid();
+        var acceptedAt = DateTimeOffset.UtcNow;
+        var token = NewLinkToken(ownerId, "AW-RACE-ACCEPT");
+        (await tokens.TryAddAsync(token, 1)).Should().BeTrue();
+
+        var rotateTask = tokens.TryRotateAsync(token.Id, ownerId, token.Code, "AW-RACE-NEW", acceptedAt.AddDays(30));
+        var acceptTask = tokens.TryAcceptAsync(token.Id, token.Code, acceptedBy, acceptedAt);
+        await Task.WhenAll(rotateTask, acceptTask);
+
+        var rotated = await rotateTask;
+        var accepted = await acceptTask;
+        ((rotated is not null ? 1 : 0) + (accepted ? 1 : 0)).Should().Be(1);
+        var stored = await tokens.GetByIdAsync(token.Id);
+        if (rotated is not null)
+        {
+            stored!.Status.Should().Be(TokenStatus.Pending);
+            stored.Code.Should().Be(rotated.Code);
+            (await tokens.TryAcceptAsync(token.Id, token.Code, acceptedBy, acceptedAt.AddSeconds(1))).Should().BeFalse();
+        }
+        else
+        {
+            stored!.Status.Should().Be(TokenStatus.Accepted);
+            stored.AcceptedBy.Should().Be(acceptedBy);
+            stored.AcceptedAt.Should().BeCloseTo(acceptedAt, TimeSpan.FromMilliseconds(1));
+            (await tokens.TryRotateAsync(token.Id, ownerId, token.Code, "AW-LATE-ROT", acceptedAt.AddDays(30)))
+                .Should().BeNull();
+        }
+
+        (await tokens.GetAsync(ownerId)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task LinkTokenRepository_RotateAndDeleteConcurrently_OnlyOneTransitionWins()
+    {
+        var ownerId = Guid.NewGuid();
+        var token = NewLinkToken(ownerId, "AW-RACE-DELETE");
+        (await tokens.TryAddAsync(token, 1)).Should().BeTrue();
+
+        var rotateTask = tokens.TryRotateAsync(token.Id, ownerId, token.Code, "AW-RACE-NEW", DateTimeOffset.UtcNow.AddDays(30));
+        var deleteTask = tokens.TryDeleteAsync(token.Id, token.Code);
+        await Task.WhenAll(rotateTask, deleteTask);
+
+        var rotated = await rotateTask;
+        var deleted = await deleteTask;
+        ((rotated is not null ? 1 : 0) + (deleted ? 1 : 0)).Should().Be(1);
+        var stored = await tokens.GetByIdAsync(token.Id);
+        if (rotated is not null)
+        {
+            stored!.Status.Should().Be(TokenStatus.Pending);
+            stored.Code.Should().Be(rotated.Code);
+            (await tokens.TryDeleteAsync(token.Id, token.Code)).Should().BeFalse();
+            (await tokens.GetAsync(ownerId)).Should().ContainSingle();
+        }
+        else
+        {
+            stored!.Status.Should().Be(TokenStatus.Deleted);
+            (await tokens.TryRotateAsync(token.Id, ownerId, token.Code, "AW-LATE-ROT", DateTimeOffset.UtcNow.AddDays(30)))
+                .Should().BeNull();
+            (await tokens.GetAsync(ownerId)).Should().BeEmpty();
+        }
+    }
+
+    [Fact]
     public async Task RevokedTokenStore_ShouldKeepTheLongestExpirationAcrossConcurrentWrites()
     {
         var jwtId = Guid.NewGuid().ToString("N");

@@ -116,12 +116,14 @@ public sealed class MongoLinkTokenRepository(MongoContext context) : ILinkTokenR
 
     public async Task<bool> TryAcceptAsync(
         Guid id,
+        string expectedCode,
         Guid acceptedBy,
         DateTimeOffset acceptedAt,
         CancellationToken cancellationToken = default)
     {
         var filter = Builders<BsonDocument>.Filter.And(
             Builders<BsonDocument>.Filter.Eq("_id", id.ToString()),
+            Builders<BsonDocument>.Filter.Eq("code", expectedCode),
             Builders<BsonDocument>.Filter.Or(
                 Builders<BsonDocument>.Filter.Eq("status", Status(TokenStatus.Pending)),
                 Builders<BsonDocument>.Filter.Exists("status", false)),
@@ -130,6 +132,19 @@ public sealed class MongoLinkTokenRepository(MongoContext context) : ILinkTokenR
             .Set("status", Status(TokenStatus.Accepted))
             .Set("acceptedBy", acceptedBy.ToString())
             .Set("acceptedAt", Date(acceptedAt));
+        var result = await Collection.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+        return result.MatchedCount == 1;
+    }
+
+    public async Task<bool> TryDeleteAsync(Guid id, string expectedCode, CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.And(
+            Builders<BsonDocument>.Filter.Eq("_id", id.ToString()),
+            Builders<BsonDocument>.Filter.Eq("code", expectedCode),
+            Builders<BsonDocument>.Filter.Ne("status", Status(TokenStatus.Accepted)));
+        var update = Builders<BsonDocument>.Update
+            .Set("status", Status(TokenStatus.Deleted))
+            .Set("quotaActive", false);
         var result = await Collection.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
         return result.MatchedCount == 1;
     }

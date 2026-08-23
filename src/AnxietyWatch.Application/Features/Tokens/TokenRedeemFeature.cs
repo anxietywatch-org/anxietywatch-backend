@@ -59,7 +59,7 @@ public sealed class TokenRedeemCommandHandler(
 
         var isSelf = string.Equals(token.Role, "self", StringComparison.OrdinalIgnoreCase);
         var accountId = isSelf ? token.UserId : Guid.NewGuid();
-        if (!await tokens.TryAcceptAsync(token.Id, accountId, now, cancellationToken))
+        if (!await tokens.TryAcceptAsync(token.Id, token.Code, accountId, now, cancellationToken))
         {
             throw new ConflictException("The code has already been used.");
         }

@@ -173,8 +173,11 @@ public sealed class DeleteTokenCommandHandler(ICurrentUser currentUser, ILinkTok
             throw new ConflictException("An accepted token cannot be deleted.");
         }
 
-        token.MarkDeleted();
-        await tokens.UpdateAsync(token, cancellationToken);
+        if (!await tokens.TryDeleteAsync(command.Id, token.Code, cancellationToken))
+        {
+            throw new ConflictException("The token state changed before the request completed.");
+        }
+
         return true;
     }
 }
@@ -243,7 +246,7 @@ public sealed class AcceptTokenCommandHandler(
             throw new GoneException("The token has expired.");
         }
 
-        if (!await tokens.TryAcceptAsync(command.Id, currentUser.UserId, now, cancellationToken))
+        if (!await tokens.TryAcceptAsync(command.Id, token.Code, currentUser.UserId, now, cancellationToken))
         {
             throw new ConflictException("The token has already been used.");
         }

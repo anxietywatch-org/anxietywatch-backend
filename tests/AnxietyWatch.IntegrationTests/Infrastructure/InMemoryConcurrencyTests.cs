@@ -96,6 +96,70 @@ public sealed class InMemoryConcurrencyTests
         stored.Role.Should().Be(token.Role);
     }
 
+    [Fact]
+    public async Task LinkTokenRotationAndAccept_ShouldAllowOnlyOneLifecycleTransition()
+    {
+        var repository = new InMemoryLinkTokenRepository();
+        var ownerId = Guid.NewGuid();
+        var acceptedBy = Guid.NewGuid();
+        var acceptedAt = DateTimeOffset.UtcNow;
+        var token = new LinkToken(Guid.NewGuid(), ownerId, "AW-OLD1-OLD2-OLD3", "self", acceptedAt.AddDays(30));
+        (await repository.TryAddAsync(token, 1)).Should().BeTrue();
+
+        var rotateTask = repository.TryRotateAsync(token.Id, ownerId, token.Code, "AW-NEW1-NEW2-NEW3", acceptedAt.AddDays(30));
+        var acceptTask = repository.TryAcceptAsync(token.Id, token.Code, acceptedBy, acceptedAt);
+        await Task.WhenAll(rotateTask, acceptTask);
+
+        var rotated = await rotateTask;
+        var accepted = await acceptTask;
+        ((rotated is not null ? 1 : 0) + (accepted ? 1 : 0)).Should().Be(1);
+        var stored = await repository.GetByIdAsync(token.Id);
+        if (rotated is not null)
+        {
+            stored!.Status.Should().Be(TokenStatus.Pending);
+            stored.Code.Should().Be(rotated.Code);
+            (await repository.TryAcceptAsync(token.Id, token.Code, acceptedBy, acceptedAt.AddSeconds(1))).Should().BeFalse();
+        }
+        else
+        {
+            stored!.Status.Should().Be(TokenStatus.Accepted);
+            stored.AcceptedBy.Should().Be(acceptedBy);
+            stored.AcceptedAt.Should().Be(acceptedAt);
+            (await repository.TryRotateAsync(token.Id, ownerId, token.Code, "AW-LATE-LATE-LATE", acceptedAt.AddDays(30)))
+                .Should().BeNull();
+        }
+    }
+
+    [Fact]
+    public async Task LinkTokenRotationAndDelete_ShouldAllowOnlyOneLifecycleTransition()
+    {
+        var repository = new InMemoryLinkTokenRepository();
+        var ownerId = Guid.NewGuid();
+        var token = new LinkToken(Guid.NewGuid(), ownerId, "AW-OLD1-OLD2-OLD3", "self", DateTimeOffset.UtcNow.AddDays(30));
+        (await repository.TryAddAsync(token, 1)).Should().BeTrue();
+
+        var rotateTask = repository.TryRotateAsync(token.Id, ownerId, token.Code, "AW-NEW1-NEW2-NEW3", DateTimeOffset.UtcNow.AddDays(30));
+        var deleteTask = repository.TryDeleteAsync(token.Id, token.Code);
+        await Task.WhenAll(rotateTask, deleteTask);
+
+        var rotated = await rotateTask;
+        var deleted = await deleteTask;
+        ((rotated is not null ? 1 : 0) + (deleted ? 1 : 0)).Should().Be(1);
+        var stored = await repository.GetByIdAsync(token.Id);
+        if (rotated is not null)
+        {
+            stored!.Status.Should().Be(TokenStatus.Pending);
+            stored.Code.Should().Be(rotated.Code);
+            (await repository.TryDeleteAsync(token.Id, token.Code)).Should().BeFalse();
+        }
+        else
+        {
+            stored!.Status.Should().Be(TokenStatus.Deleted);
+            (await repository.TryRotateAsync(token.Id, ownerId, token.Code, "AW-LATE-LATE-LATE", DateTimeOffset.UtcNow.AddDays(30)))
+                .Should().BeNull();
+        }
+    }
+
     private sealed class StubCurrentUser(Guid userId, string email) : ICurrentUser
     {
         public Guid UserId { get; } = userId;

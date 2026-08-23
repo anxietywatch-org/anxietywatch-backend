@@ -13,7 +13,13 @@ public interface ILinkTokenRepository
         string newCode,
         DateTimeOffset expiresAt,
         CancellationToken cancellationToken = default);
-    Task<bool> TryAcceptAsync(Guid id, Guid acceptedBy, DateTimeOffset acceptedAt, CancellationToken cancellationToken = default);
+    Task<bool> TryAcceptAsync(
+        Guid id,
+        string expectedCode,
+        Guid acceptedBy,
+        DateTimeOffset acceptedAt,
+        CancellationToken cancellationToken = default);
+    Task<bool> TryDeleteAsync(Guid id, string expectedCode, CancellationToken cancellationToken = default);
     Task<bool> TryRevokeAsync(Guid id, CancellationToken cancellationToken = default);
     Task UpdateAsync(LinkToken token, CancellationToken cancellationToken = default);
 }
