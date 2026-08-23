@@ -368,6 +368,110 @@ public sealed class BillingEndpointTests(CustomWebApplicationFactory factory)
         createNew.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
+    [Fact]
+    public async Task DowngradeToFree_WithStaleFamilyJwt_ShouldEnforceFreeTokenQuotaImmediately()
+    {
+        using var client = factory.CreateClient();
+        var registration = await RegisterAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", registration.Token);
+        await SimulatePaymentAsync(client, "family");
+        await UseCurrentSessionTokenAsync(client);
+
+        for (var index = 0; index < 5; index++)
+        {
+            (await client.PostAsJsonAsync("/api/tokens", new { role = "family_member" })).StatusCode
+                .Should().Be(HttpStatusCode.Created);
+        }
+
+        var downgrade = await client.PostAsync("/api/billing/downgrade-to-free", null);
+        downgrade.StatusCode.Should().Be(HttpStatusCode.OK);
+        var downgradeBody = await downgrade.Content.ReadFromJsonAsync<DowngradeToFreeResponse>();
+        downgradeBody!.PlanId.Should().Be("free");
+        downgradeBody.PreviousPlanId.Should().Be("family");
+        downgradeBody.Changed.Should().BeTrue();
+
+        var createAfterDowngrade = await client.PostAsJsonAsync("/api/tokens", new { role = "self" });
+
+        createAfterDowngrade.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task DowngradeToFree_WithStaleFamilyJwt_ShouldEnforceFreeEpisodeQuotaImmediately()
+    {
+        using var client = factory.CreateClient();
+        var registration = await RegisterAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", registration.Token);
+        await SimulatePaymentAsync(client, "family");
+        await UseCurrentSessionTokenAsync(client);
+
+        for (var index = 0; index < 5; index++)
+        {
+            (await CreateEpisodeAsync(client)).StatusCode.Should().Be(HttpStatusCode.Created);
+        }
+
+        var downgrade = await client.PostAsync("/api/billing/downgrade-to-free", null);
+        downgrade.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await downgrade.Content.ReadFromJsonAsync<DowngradeToFreeResponse>())!.Changed.Should().BeTrue();
+
+        var createAfterDowngrade = await CreateEpisodeAsync(client);
+
+        createAfterDowngrade.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task DowngradeToFree_WithStalePaidJwt_ShouldDenyPrivateModeImmediately()
+    {
+        using var client = factory.CreateClient();
+        var registration = await RegisterAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", registration.Token);
+        await SimulatePaymentAsync(client, "individual");
+        await UseCurrentSessionTokenAsync(client);
+
+        var downgrade = await client.PostAsync("/api/billing/downgrade-to-free", null);
+        downgrade.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var privateMode = await client.PatchAsJsonAsync("/api/settings", new
+        {
+            anxietyThreshold = 55,
+            pushNotifications = true,
+            privateMode = true
+        });
+
+        privateMode.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task DowngradeToFree_WithStalePaidJwt_ShouldExposeFreeSessionSummaryAndIdempotentRetry()
+    {
+        using var client = factory.CreateClient();
+        var registration = await RegisterAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", registration.Token);
+        await SimulatePaymentAsync(client, "individual");
+        await UseCurrentSessionTokenAsync(client);
+
+        var downgrade = await client.PostAsync("/api/billing/downgrade-to-free", null);
+        downgrade.StatusCode.Should().Be(HttpStatusCode.OK);
+        var downgradeBody = await downgrade.Content.ReadFromJsonAsync<DowngradeToFreeResponse>();
+        downgradeBody!.Should().Be(new DowngradeToFreeResponse("free", "individual", true, downgradeBody.DowngradedAt));
+        downgradeBody.DowngradedAt.Should().NotBeNull();
+
+        var session = await client.GetFromJsonAsync<AuthResponse>("/api/auth/session");
+        session!.User.PlanId.Should().Be("free");
+
+        var summary = await client.GetFromJsonAsync<BillingSummaryResponse>("/api/billing/summary");
+        summary!.PlanId.Should().Be("free");
+
+        var retry = await client.PostAsync("/api/billing/downgrade-to-free", null);
+        retry.StatusCode.Should().Be(HttpStatusCode.OK);
+        var retryBody = await retry.Content.ReadFromJsonAsync<DowngradeToFreeResponse>();
+        retryBody.Should().Be(new DowngradeToFreeResponse("free", "free", false, null));
+
+        var transactions = await client.GetFromJsonAsync<SimulatedPaymentResponse[]>("/api/billing/transactions");
+        transactions!.Length.Should().Be(1);
+        transactions[0].PlanId.Should().Be("individual");
+        transactions[0].Amount.Should().BeGreaterThan(0);
+    }
+
     private static async Task<AuthResponse> RegisterAsync(HttpClient client)
     {
         var response = await client.PostAsJsonAsync("/api/auth/register", new
@@ -383,9 +487,34 @@ public sealed class BillingEndpointTests(CustomWebApplicationFactory factory)
         return (await response.Content.ReadFromJsonAsync<AuthResponse>())!;
     }
 
+    private static async Task SimulatePaymentAsync(HttpClient client, string planId)
+    {
+        var response = await client.PostAsJsonAsync("/api/billing/simulate-payment", new
+        {
+            planId,
+            billingCycle = "monthly"
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    private static async Task UseCurrentSessionTokenAsync(HttpClient client)
+    {
+        var session = await client.GetFromJsonAsync<AuthResponse>("/api/auth/session");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session!.Token);
+    }
+
+    private static Task<HttpResponseMessage> CreateEpisodeAsync(HttpClient client) =>
+        client.PostAsJsonAsync("/api/episodes", new
+        {
+            intensity = 50,
+            symptoms = new[] { "test" },
+            notes = "test"
+        });
+
     private sealed record AuthResponse(string Token, UserResponse User);
     private sealed record UserResponse(string Id, string FullName, string Email, string PlanId, bool EmailVerified);
     private sealed record DowngradeToFreeResponse(string PlanId, string PreviousPlanId, bool Changed, DateTimeOffset? DowngradedAt);
+    private sealed record BillingSummaryResponse(string PlanId, string BillingCycle, string Status, SimulatedPaymentResponse? LastPayment, IReadOnlyList<SimulatedPaymentResponse> Transactions, bool Simulated);
     private sealed record TokenQuotaResponse(int Limit, int Used, int Remaining);
     private sealed record TokenResponse(string Id, string Code, string Role, DateTimeOffset ExpiresAt, string Status);
     private sealed record SimulatedPaymentResponse(string TransactionId, string PlanId, string BillingCycle, decimal Amount, string Currency, string Status, bool Simulated, DateTimeOffset CreatedAt);
