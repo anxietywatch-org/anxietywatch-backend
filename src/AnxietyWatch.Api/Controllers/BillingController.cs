@@ -16,6 +16,12 @@ public sealed class BillingController(ISender sender) : ControllerBase
         CancellationToken cancellationToken) =>
         StatusCode(StatusCodes.Status201Created, await sender.Send(command, cancellationToken));
 
+    [HttpPost("downgrade-to-free")]
+    [ProducesResponseType<DowngradeToFreeResponse>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<DowngradeToFreeResponse>> DowngradeToFree(
+        CancellationToken cancellationToken) =>
+        Ok(await sender.Send(new DowngradeToFreeCommand(), cancellationToken));
+
     [HttpGet("summary")]
     public async Task<ActionResult<BillingSummaryResponse>> Summary(CancellationToken cancellationToken) =>
         Ok(await sender.Send(new GetBillingSummaryQuery(), cancellationToken));

@@ -103,3 +103,50 @@ public sealed class GetBillingSummaryQueryHandler(
         new(transaction.Id.ToString(), transaction.PlanId, transaction.BillingCycle, transaction.Amount,
             transaction.Currency, transaction.Status, transaction.Simulated, transaction.CreatedAt);
 }
+
+public sealed record DowngradeToFreeCommand : IRequest<DowngradeToFreeResponse>;
+
+public sealed record DowngradeToFreeResponse(
+    string PlanId,
+    string PreviousPlanId,
+    bool Changed,
+    DateTimeOffset? DowngradedAt = null);
+
+public sealed class DowngradeToFreeCommandHandler(
+    ICurrentUser currentUser,
+    IUserRepository users,
+    IBillingTransactionRepository transactions,
+    ISystemClock clock)
+    : IRequestHandler<DowngradeToFreeCommand, DowngradeToFreeResponse>
+{
+    public async Task<DowngradeToFreeResponse> Handle(DowngradeToFreeCommand command, CancellationToken cancellationToken)
+    {
+        RequireAuthenticatedUser();
+
+        var user = await users.GetByIdAsync(currentUser.UserId, cancellationToken)
+            ?? throw new UnauthorizedApplicationException("The session is invalid.");
+
+        var previousPlanId = user.PlanId;
+        if (string.Equals(previousPlanId, "free", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DowngradeToFreeResponse("free", "free", false);
+        }
+
+        var now = clock.UtcNow;
+        if (!await users.UpdatePlanAsync(currentUser.UserId, "free", cancellationToken))
+            throw new UnauthorizedApplicationException("The session is invalid.");
+
+        var transaction = new BillingTransaction(
+            Guid.NewGuid(), currentUser.UserId, "free", "monthly",
+            0m, "MXN", now, "downgraded", true);
+        await transactions.AddAsync(transaction, cancellationToken);
+
+        return new DowngradeToFreeResponse("free", previousPlanId, true, now);
+    }
+
+    private void RequireAuthenticatedUser()
+    {
+        if (!currentUser.IsAuthenticated || currentUser.UserId == Guid.Empty)
+            throw new UnauthorizedApplicationException("Authentication is required.");
+    }
+}
