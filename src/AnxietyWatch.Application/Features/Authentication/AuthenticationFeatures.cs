@@ -543,3 +543,26 @@ public sealed class ConfirmEmailCommandHandler(IUserRepository users, ISystemClo
         return "Email verified";
     }
 }
+
+public sealed record CheckEmailAvailabilityCommand(string Email) : IRequest<EmailAvailabilityResponse>;
+
+public sealed record EmailAvailabilityResponse(bool Available);
+
+public sealed class CheckEmailAvailabilityCommandValidator : AbstractValidator<CheckEmailAvailabilityCommand>
+{
+    public CheckEmailAvailabilityCommandValidator()
+    {
+        RuleFor(command => command.Email).NotEmpty().EmailAddress();
+    }
+}
+
+public sealed class CheckEmailAvailabilityCommandHandler(IUserRepository users)
+    : IRequestHandler<CheckEmailAvailabilityCommand, EmailAvailabilityResponse>
+{
+    public async Task<EmailAvailabilityResponse> Handle(CheckEmailAvailabilityCommand command, CancellationToken cancellationToken)
+    {
+        var normalizedEmail = RegisterCommandHandler.NormalizeEmail(command.Email);
+        var user = await users.GetByEmailAsync(normalizedEmail, cancellationToken);
+        return new EmailAvailabilityResponse(user is null);
+    }
+}
