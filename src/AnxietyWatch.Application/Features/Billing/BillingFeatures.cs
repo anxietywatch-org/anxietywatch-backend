@@ -115,7 +115,6 @@ public sealed record DowngradeToFreeResponse(
 public sealed class DowngradeToFreeCommandHandler(
     ICurrentUser currentUser,
     IUserRepository users,
-    IBillingTransactionRepository transactions,
     ISystemClock clock)
     : IRequestHandler<DowngradeToFreeCommand, DowngradeToFreeResponse>
 {
@@ -135,11 +134,6 @@ public sealed class DowngradeToFreeCommandHandler(
         var now = clock.UtcNow;
         if (!await users.UpdatePlanAsync(currentUser.UserId, "free", cancellationToken))
             throw new UnauthorizedApplicationException("The session is invalid.");
-
-        var transaction = new BillingTransaction(
-            Guid.NewGuid(), currentUser.UserId, "free", "monthly",
-            0m, "MXN", now, "downgraded", true);
-        await transactions.AddAsync(transaction, cancellationToken);
 
         return new DowngradeToFreeResponse("free", previousPlanId, true, now);
     }

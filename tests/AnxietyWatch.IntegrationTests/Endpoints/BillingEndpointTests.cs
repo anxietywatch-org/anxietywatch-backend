@@ -170,10 +170,42 @@ public sealed class BillingEndpointTests(CustomWebApplicationFactory factory)
         body2!.Changed.Should().BeFalse();
         body2.DowngradedAt.Should().BeNull();
 
-        // No duplicate audit transaction for second call
+        // Only the original payment transaction exists (no synthetic downgrade records)
         var transactions = await client.GetFromJsonAsync<SimulatedPaymentResponse[]>("/api/billing/transactions");
-        transactions!.Length.Should().Be(2); // 1 payment + 1 downgrade
-        transactions.Count(t => t.PlanId == "free" && t.Status == "downgraded").Should().Be(1);
+        transactions!.Length.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DowngradeToFree_ConcurrentRequests_PlanBecomesFreeOnce()
+    {
+        using var client = factory.CreateClient();
+        var registration = await RegisterAsync(client);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", registration.Token);
+
+        // Upgrade first
+        await client.PostAsJsonAsync("/api/billing/simulate-payment", new
+        {
+            planId = "individual",
+            billingCycle = "monthly"
+        });
+
+        // Fire two concurrent downgrade requests
+        var downgrade1 = client.PostAsync("/api/billing/downgrade-to-free", null);
+        var downgrade2 = client.PostAsync("/api/billing/downgrade-to-free", null);
+
+        await Task.WhenAll(downgrade1, downgrade2);
+
+        // Both should succeed (200)
+        (await downgrade1).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await downgrade2).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Final state: plan is free
+        var session = await client.GetFromJsonAsync<AuthResponse>("/api/auth/session");
+        session!.User.PlanId.Should().Be("free");
+
+        // Only the original payment transaction exists
+        var transactions = await client.GetFromJsonAsync<SimulatedPaymentResponse[]>("/api/billing/transactions");
+        transactions!.Length.Should().Be(1);
     }
 
     [Fact]
@@ -220,11 +252,10 @@ public sealed class BillingEndpointTests(CustomWebApplicationFactory factory)
         // Downgrade
         await client.PostAsync("/api/billing/downgrade-to-free", null);
 
-        // Check history includes both payment and downgrade
+        // Check history preserves the original payment only (no synthetic downgrade record)
         var transactions = await client.GetFromJsonAsync<SimulatedPaymentResponse[]>("/api/billing/transactions");
-        transactions!.Length.Should().Be(2);
+        transactions!.Length.Should().Be(1);
         transactions.Any(t => t.PlanId == "individual" && t.Amount > 0).Should().BeTrue();
-        transactions.Any(t => t.PlanId == "free" && t.Status == "downgraded").Should().BeTrue();
     }
 
     [Fact]
