@@ -57,6 +57,32 @@ public sealed class InMemoryLinkTokenRepository : ILinkTokenRepository
         }
     }
 
+    public Task<LinkToken?> TryRotateAsync(
+        Guid id,
+        Guid ownerId,
+        string expectedCode,
+        string newCode,
+        DateTimeOffset expiresAt,
+        CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            if (!tokens.TryGetValue(id, out var current) ||
+                current.UserId != ownerId ||
+                current.Status != TokenStatus.Pending ||
+                !string.Equals(current.Code, expectedCode, StringComparison.Ordinal) ||
+                tokens.Values.Any(existing => existing.Id != id && existing.Code == newCode))
+            {
+                return Task.FromResult<LinkToken?>(null);
+            }
+
+            var rotated = Clone(current);
+            rotated.Rotate(newCode, expiresAt);
+            tokens[id] = rotated;
+            return Task.FromResult<LinkToken?>(Clone(rotated));
+        }
+    }
+
     public Task<bool> TryAcceptAsync(
         Guid id,
         Guid acceptedBy,

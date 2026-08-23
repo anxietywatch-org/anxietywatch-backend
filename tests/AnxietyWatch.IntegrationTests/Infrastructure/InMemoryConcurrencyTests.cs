@@ -2,7 +2,9 @@ using AnxietyWatch.Application.Abstractions.Security;
 using AnxietyWatch.Application.Abstractions.Time;
 using AnxietyWatch.Application.Common;
 using AnxietyWatch.Application.Features.Authentication;
+using AnxietyWatch.Domain.Tokens;
 using AnxietyWatch.Domain.Users;
+using AnxietyWatch.Infrastructure.Persistence;
 using AnxietyWatch.Infrastructure.Security;
 using FluentAssertions;
 
@@ -68,6 +70,30 @@ public sealed class InMemoryConcurrencyTests
         (await retryHandler.Handle(new ResendVerificationEmailCommand(), CancellationToken.None))
             .Should().Be("Verification email sent");
         successfulSender.Messages.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task LinkTokenRotation_ShouldAllowOnlyOneWinnerForTheSameExpectedCode()
+    {
+        var repository = new InMemoryLinkTokenRepository();
+        var ownerId = Guid.NewGuid();
+        var token = new LinkToken(Guid.NewGuid(), ownerId, "AW-OLD1-OLD2-OLD3", "self", DateTimeOffset.UtcNow.AddDays(30));
+        (await repository.TryAddAsync(token, 1)).Should().BeTrue();
+
+        var attempts = await Task.WhenAll(Enumerable.Range(0, 20).Select(index =>
+            repository.TryRotateAsync(
+                token.Id,
+                ownerId,
+                token.Code,
+                $"AW-NEW1-NEW2-{index:0000}",
+                DateTimeOffset.UtcNow.AddDays(30))));
+
+        var winners = attempts.Where(result => result is not null).ToArray();
+        winners.Should().ContainSingle();
+        var stored = await repository.GetByIdAsync(token.Id);
+        stored!.Code.Should().Be(winners[0]!.Code);
+        stored.Id.Should().Be(token.Id);
+        stored.Role.Should().Be(token.Role);
     }
 
     private sealed class StubCurrentUser(Guid userId, string email) : ICurrentUser

@@ -77,6 +77,43 @@ public sealed class MongoLinkTokenRepository(MongoContext context) : ILinkTokenR
         return document is null ? null : Map(document);
     }
 
+    public async Task<LinkToken?> TryRotateAsync(
+        Guid id,
+        Guid ownerId,
+        string expectedCode,
+        string newCode,
+        DateTimeOffset expiresAt,
+        CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.And(
+            Builders<BsonDocument>.Filter.Eq("_id", id.ToString()),
+            Builders<BsonDocument>.Filter.Eq("userId", ownerId.ToString()),
+            Builders<BsonDocument>.Filter.Eq("code", expectedCode),
+            Builders<BsonDocument>.Filter.Or(
+                Builders<BsonDocument>.Filter.Eq("status", Status(TokenStatus.Pending)),
+                Builders<BsonDocument>.Filter.Exists("status", false)));
+        var update = Builders<BsonDocument>.Update
+            .Set("code", newCode)
+            .Set("expiresAt", Date(expiresAt))
+            .Set("status", Status(TokenStatus.Pending))
+            .Set("acceptedBy", BsonNull.Value)
+            .Set("acceptedAt", BsonNull.Value);
+
+        try
+        {
+            var document = await Collection.FindOneAndUpdateAsync(
+                filter,
+                update,
+                new FindOneAndUpdateOptions<BsonDocument> { ReturnDocument = ReturnDocument.After },
+                cancellationToken);
+            return document is null ? null : Map(document);
+        }
+        catch (MongoWriteException exception) when (exception.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+        {
+            throw new ConflictException("The token code already exists.");
+        }
+    }
+
     public async Task<bool> TryAcceptAsync(
         Guid id,
         Guid acceptedBy,

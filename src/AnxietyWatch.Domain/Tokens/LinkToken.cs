@@ -34,14 +34,23 @@ public sealed class LinkToken : Entity
     }
 
     public Guid UserId { get; }
-    public string Code { get; }
+    public string Code { get; private set; }
     public string Role { get; }
-    public DateTimeOffset ExpiresAt { get; }
+    public DateTimeOffset ExpiresAt { get; private set; }
     public TokenStatus Status { get; private set; } = TokenStatus.Pending;
     public Guid? AcceptedBy { get; private set; }
     public DateTimeOffset? AcceptedAt { get; private set; }
 
     public void MarkDeleted() => Status = TokenStatus.Deleted;
+
+    public void Rotate(string code, DateTimeOffset expiresAt)
+    {
+        Code = code;
+        ExpiresAt = expiresAt;
+        Status = TokenStatus.Pending;
+        AcceptedBy = null;
+        AcceptedAt = null;
+    }
 
     public void Accept(Guid userId, DateTimeOffset now)
     {

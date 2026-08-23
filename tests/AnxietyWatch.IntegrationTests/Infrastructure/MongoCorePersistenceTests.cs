@@ -212,6 +212,30 @@ public sealed class MongoCorePersistenceTests : IClassFixture<MongoDbContainerFi
     }
 
     [Fact]
+    public async Task LinkTokenRepository_ShouldRotateConcurrentlyWithOneWinnerForExpectedCode()
+    {
+        var ownerId = Guid.NewGuid();
+        var token = NewLinkToken(ownerId, "AW-ROTATE-OLD");
+        (await tokens.TryAddAsync(token, 1)).Should().BeTrue();
+
+        var attempts = await Task.WhenAll(Enumerable.Range(0, 20).Select(index =>
+            tokens.TryRotateAsync(
+                token.Id,
+                ownerId,
+                token.Code,
+                $"AW-ROTATE-{index:00}",
+                DateTimeOffset.UtcNow.AddDays(30))));
+
+        var winners = attempts.Where(result => result is not null).ToArray();
+        winners.Should().ContainSingle();
+        var stored = await tokens.GetByIdAsync(token.Id);
+        stored!.Code.Should().Be(winners[0]!.Code);
+        stored.Id.Should().Be(token.Id);
+        stored.Role.Should().Be(token.Role);
+        (await tokens.GetAsync(ownerId)).Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task RevokedTokenStore_ShouldKeepTheLongestExpirationAcrossConcurrentWrites()
     {
         var jwtId = Guid.NewGuid().ToString("N");
