@@ -169,6 +169,24 @@ public sealed class CaregiverPatientEpisodesEndpointTests(CustomWebApplicationFa
             .StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [Fact]
+    public async Task ValidRangesAndDefaultMatchSelfEndpointContract()
+    {
+        var (caregiver, caregiverId) = await CreateUserAsync("Caregiver");
+        var (patient, patientId) = await CreateUserAsync("Patient");
+        await AddRelationshipAsync(patientId, caregiverId, TokenStatus.Accepted, "family_member");
+        await CreateEpisodeAsync(patient, 50, "symptom", "note");
+
+        foreach (var range in new[] { 7, 30, 90 })
+        {
+            (await caregiver.GetAsync($"/api/caregiver/patients/{patientId}/episodes?range={range}"))
+                .StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        (await caregiver.GetAsync($"/api/caregiver/patients/{patientId}/episodes"))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     private async Task<(HttpClient Client, Guid UserId)> CreateUserAsync(string name)
     {
         var client = factory.CreateClient();
