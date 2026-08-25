@@ -2,6 +2,7 @@ using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using AnxietyWatch.Application.Behaviors;
+using AnxietyWatch.Application.Features.Caregivers;
 
 namespace AnxietyWatch.Application;
 
@@ -13,6 +14,7 @@ public static class DependencyInjection
             configuration.RegisterServicesFromAssembly(typeof(DependencyInjection).Assembly));
         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly);
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+        services.AddTransient<ICaregiverAccessAuthorizer, CaregiverAccessAuthorizer>();
         return services;
     }
 }

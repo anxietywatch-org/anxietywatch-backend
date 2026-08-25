@@ -77,6 +77,20 @@ public sealed class MongoLinkTokenRepository(MongoContext context) : ILinkTokenR
         return document is null ? null : Map(document);
     }
 
+    public async Task<bool> HasAcceptedCaregiverRelationshipAsync(
+        Guid patientId,
+        Guid caregiverId,
+        CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.And(
+            Builders<BsonDocument>.Filter.Eq("userId", patientId.ToString()),
+            Builders<BsonDocument>.Filter.Eq("acceptedBy", caregiverId.ToString()),
+            Builders<BsonDocument>.Filter.Eq("status", Status(TokenStatus.Accepted)),
+            Builders<BsonDocument>.Filter.Eq("role", "family_member"));
+
+        return await Collection.CountDocumentsAsync(filter, new CountOptions { Limit = 1 }, cancellationToken) == 1;
+    }
+
     public async Task<LinkToken?> TryRotateAsync(
         Guid id,
         Guid ownerId,
