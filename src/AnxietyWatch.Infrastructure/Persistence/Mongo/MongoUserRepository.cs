@@ -99,6 +99,45 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
         return result.MatchedCount == 1;
     }
 
+    public async Task<User?> TryActivateCaregiverAsync(
+        Guid id,
+        long expectedVersion,
+        string expectedEmail,
+        string email,
+        string passwordHash,
+        CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.And(
+            Builders<BsonDocument>.Filter.Eq("_id", id.ToString()),
+            VersionFilter(expectedVersion),
+            Builders<BsonDocument>.Filter.Eq("email", expectedEmail),
+            Builders<BsonDocument>.Filter.Eq("role", "family_member"),
+            Builders<BsonDocument>.Filter.Regex("email", new BsonRegularExpression("@device\\.anxietywatch\\.internal$", "i")));
+        var update = Builders<BsonDocument>.Update
+            .Set("email", email)
+            .Set("passwordHash", passwordHash)
+            .Set("emailVerified", false)
+            .Inc("securityVersion", 1)
+            .Inc("version", 1);
+        try
+        {
+            var document = await Collection.FindOneAndUpdateAsync(
+                filter,
+                update,
+                new FindOneAndUpdateOptions<BsonDocument> { ReturnDocument = ReturnDocument.After },
+                cancellationToken);
+            return document is null ? null : Map(document);
+        }
+        catch (MongoWriteException exception) when (exception.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+        {
+            throw new ConflictException("The email is already registered.");
+        }
+        catch (MongoCommandException exception) when (exception.Code == 11000)
+        {
+            throw new ConflictException("The email is already registered.");
+        }
+    }
+
     public async Task<User?> RegisterFailedLoginAsync(
         Guid id,
         DateTimeOffset now,

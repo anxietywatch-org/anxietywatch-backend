@@ -89,6 +89,33 @@ public sealed class InMemoryUserRepository : IUserRepository
         }
     }
 
+    public Task<User?> TryActivateCaregiverAsync(
+        Guid id,
+        long expectedVersion,
+        string expectedEmail,
+        string email,
+        string passwordHash,
+        CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            if (!users.TryGetValue(id, out var user) ||
+                user.Version != expectedVersion ||
+                !string.Equals(user.Email, expectedEmail, StringComparison.Ordinal) ||
+                !string.Equals(user.Role, "family_member", StringComparison.Ordinal) ||
+                !user.Email.EndsWith("@device.anxietywatch.internal", StringComparison.OrdinalIgnoreCase) ||
+                users.Values.Any(candidate => candidate.Id != id &&
+                    string.Equals(candidate.Email, email, StringComparison.OrdinalIgnoreCase)))
+            {
+                return Task.FromResult<User?>(null);
+            }
+
+            user.ActivateCaregiver(email, passwordHash);
+            user.MarkPersisted();
+            return Task.FromResult<User?>(Clone(user));
+        }
+    }
+
     public Task<User?> RegisterFailedLoginAsync(
         Guid id,
         DateTimeOffset now,

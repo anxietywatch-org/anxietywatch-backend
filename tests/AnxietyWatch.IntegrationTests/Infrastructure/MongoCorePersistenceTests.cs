@@ -37,6 +37,129 @@ public sealed class MongoCorePersistenceTests : IClassFixture<MongoDbContainerFi
     public Task DisposeAsync() => context.Database.Client.DropDatabaseAsync(context.Database.DatabaseNamespace.DatabaseName);
 
     [Fact]
+    public async Task UserRepository_CaregiverActivation_AllowsOnlyOneConcurrentTransition()
+    {
+        var user = new User(
+            Guid.NewGuid(),
+            "Cuidador",
+            "caregiver+temporary@device.anxietywatch.internal",
+            "placeholder",
+            "free",
+            "family_member");
+        await users.AddAsync(user);
+
+        var results = await Task.WhenAll(
+            users.TryActivateCaregiverAsync(
+                user.Id,
+                user.Version,
+                user.Email,
+                "caregiver-a@example.test",
+                "hash-a"),
+            users.TryActivateCaregiverAsync(
+                user.Id,
+                user.Version,
+                user.Email,
+                "caregiver-b@example.test",
+                "hash-b"));
+
+        results.Count(result => result is not null).Should().Be(1);
+        results.Count(result => result is null).Should().Be(1);
+        var stored = await users.GetByIdAsync(user.Id);
+        stored!.Email.Should().BeOneOf("caregiver-a@example.test", "caregiver-b@example.test");
+        stored.PasswordHash.Should().BeOneOf("hash-a", "hash-b");
+        stored.SecurityVersion.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UserRepository_CaregiverActivation_DuplicateEmailLeavesPlaceholderUnchanged()
+    {
+        var existing = new User(Guid.NewGuid(), "Existing", "claimed@example.test", "hash", "free");
+        var caregiver = new User(
+            Guid.NewGuid(),
+            "Cuidador",
+            "caregiver+temporary@device.anxietywatch.internal",
+            "placeholder",
+            "free",
+            "family_member");
+        await users.AddAsync(existing);
+        await users.AddAsync(caregiver);
+
+        Func<Task> activate = () => users.TryActivateCaregiverAsync(
+            caregiver.Id,
+            caregiver.Version,
+            caregiver.Email,
+            existing.Email,
+            "new-hash");
+
+        await activate.Should().ThrowAsync<ConflictException>();
+        var stored = await users.GetByIdAsync(caregiver.Id);
+        stored!.Email.Should().Be(caregiver.Email);
+        stored.PasswordHash.Should().Be("placeholder");
+        stored.SecurityVersion.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task UserRepository_CaregiverActivation_RacesRegistrationForEmailWithoutHalfActivation()
+    {
+        var caregiver = new User(
+            Guid.NewGuid(),
+            "Cuidador",
+            "caregiver+temporary@device.anxietywatch.internal",
+            "placeholder",
+            "free",
+            "family_member");
+        var claimant = new User(Guid.NewGuid(), "Claimant", "race@example.test", "claimant-hash", "free");
+        await users.AddAsync(caregiver);
+
+        async Task<bool> ActivateAsync()
+        {
+            try
+            {
+                return await users.TryActivateCaregiverAsync(
+                    caregiver.Id,
+                    caregiver.Version,
+                    caregiver.Email,
+                    claimant.Email,
+                    "caregiver-hash") is not null;
+            }
+            catch (ConflictException)
+            {
+                return false;
+            }
+        }
+
+        async Task<bool> RegisterAsync()
+        {
+            try
+            {
+                await users.AddAsync(claimant);
+                return true;
+            }
+            catch (ConflictException)
+            {
+                return false;
+            }
+        }
+
+        var results = await Task.WhenAll(ActivateAsync(), RegisterAsync());
+
+        results.Count(result => result).Should().Be(1);
+        var stored = await users.GetByIdAsync(caregiver.Id);
+        if (results[0])
+        {
+            stored!.Email.Should().Be(claimant.Email);
+            stored.PasswordHash.Should().Be("caregiver-hash");
+            stored.SecurityVersion.Should().Be(1);
+        }
+        else
+        {
+            stored!.Email.Should().Be(caregiver.Email);
+            stored.PasswordHash.Should().Be("placeholder");
+            stored.SecurityVersion.Should().Be(0);
+        }
+    }
+
+    [Fact]
     public async Task UserRepository_ShouldRejectStaleWritesAndLockConcurrentFailures()
     {
         var now = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
