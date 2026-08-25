@@ -140,20 +140,41 @@ public sealed class CaregiverActivationEndpointTests(CustomWebApplicationFactory
             caregiver.Client.SendAsync(requestB));
 
         responses.Count(response => response.StatusCode == HttpStatusCode.OK).Should().Be(1);
-        responses.Count(response => response.StatusCode == HttpStatusCode.Conflict).Should().Be(1);
+        responses.Count(response => response.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.Unauthorized).Should().Be(1);
         var winner = responses.Single(response => response.StatusCode == HttpStatusCode.OK);
         var auth = await winner.Content.ReadFromJsonAsync<AuthResponse>();
         auth!.User.Email.Should().BeOneOf("caregiver-a@example.test", "caregiver-b@example.test");
+
+        var winnerPassword = auth.User.Email.Contains("-a@", StringComparison.Ordinal)
+            ? "CaregiverPassword1"
+            : "CaregiverPassword2";
+        var losingEmail = auth.User.Email.Contains("-a@", StringComparison.Ordinal)
+            ? "caregiver-b@example.test"
+            : "caregiver-a@example.test";
+        var losingPassword = auth.User.Email.Contains("-a@", StringComparison.Ordinal)
+            ? "CaregiverPassword2"
+            : "CaregiverPassword1";
 
         using var login = factory.CreateClient();
         var loginResponse = await login.PostAsJsonAsync("/api/auth/login", new
         {
             email = auth.User.Email,
-            password = auth.User.Email.Contains("-a@", StringComparison.Ordinal)
-                ? "CaregiverPassword1"
-                : "CaregiverPassword2"
+            password = winnerPassword
         });
         loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var losingLoginResponse = await factory.CreateClient().PostAsJsonAsync("/api/auth/login", new
+        {
+            email = losingEmail,
+            password = losingPassword
+        });
+        losingLoginResponse.IsSuccessStatusCode.Should().BeFalse();
+
+        var loggedIn = await loginResponse.Content.ReadFromJsonAsync<AuthResponse>();
+        login.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loggedIn!.Token);
+        (await login.GetAsync("/api/auth/session")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await login.GetFromJsonAsync<LinkedPatientResponse[]>("/api/caregiver/patients"))
+            .Should().ContainSingle();
     }
 
     [Fact]
