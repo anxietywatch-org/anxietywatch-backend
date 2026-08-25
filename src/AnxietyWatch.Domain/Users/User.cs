@@ -130,6 +130,14 @@ public sealed class User : AggregateRoot
         SecurityVersion++;
     }
 
+    public void ActivateCaregiver(string email, string passwordHash)
+    {
+        Email = email;
+        PasswordHash = passwordHash;
+        EmailVerified = false;
+        SecurityVersion++;
+    }
+
     public void UpdateProfile(string fullName, string? avatarUrl)
     {
         FullName = fullName;

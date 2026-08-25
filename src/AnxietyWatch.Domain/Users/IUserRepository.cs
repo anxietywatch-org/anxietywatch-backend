@@ -13,6 +13,13 @@ public interface IUserRepository
     Task UpdateAsync(User user, CancellationToken cancellationToken = default);
     Task<bool> UpdatePlanAsync(Guid id, string planId, CancellationToken cancellationToken = default);
     Task<bool> UpdatePasswordAsync(Guid id, string passwordHash, CancellationToken cancellationToken = default);
+    Task<User?> TryActivateCaregiverAsync(
+        Guid id,
+        long expectedVersion,
+        string expectedEmail,
+        string email,
+        string passwordHash,
+        CancellationToken cancellationToken = default);
     Task<User?> RegisterFailedLoginAsync(
         Guid id,
         DateTimeOffset now,

@@ -28,6 +28,13 @@ public sealed class AuthController(ISender sender) : ControllerBase
         Ok(await sender.Send(command, cancellationToken));
 
     [Authorize]
+    [HttpPost("caregiver/activate")]
+    public async Task<ActionResult<AuthenticationResponse>> ActivateCaregiver(
+        ActivateCaregiverCommand command,
+        CancellationToken cancellationToken) =>
+        Ok(await sender.Send(command, cancellationToken));
+
+    [Authorize]
     [HttpGet("session")]
     public async Task<ActionResult<AuthenticationResponse>> Session(CancellationToken cancellationToken) =>
         Ok(await sender.Send(new GetSessionQuery(), cancellationToken));

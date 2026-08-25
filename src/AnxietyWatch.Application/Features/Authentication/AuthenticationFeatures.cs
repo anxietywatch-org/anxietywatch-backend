@@ -148,6 +148,63 @@ public sealed class RegisterCommandHandler(
 
 public sealed record LoginCommand(string Email, string Password) : IRequest<AuthenticationResponse>;
 
+public sealed record ActivateCaregiverCommand(string Email, string Password) : IRequest<AuthenticationResponse>;
+
+public sealed class ActivateCaregiverCommandValidator : AbstractValidator<ActivateCaregiverCommand>
+{
+    public ActivateCaregiverCommandValidator()
+    {
+        RuleFor(command => command.Email).NotEmpty().EmailAddress();
+        RuleFor(command => command.Password).MinimumLength(8).MaximumLength(30);
+    }
+}
+
+public sealed class ActivateCaregiverCommandHandler(
+    ICurrentUser currentUser,
+    IUserRepository users,
+    IPasswordHasher passwordHasher,
+    IJwtTokenService jwtTokenService)
+    : IRequestHandler<ActivateCaregiverCommand, AuthenticationResponse>
+{
+    public async Task<AuthenticationResponse> Handle(
+        ActivateCaregiverCommand command,
+        CancellationToken cancellationToken)
+    {
+        if (!currentUser.IsAuthenticated || currentUser.UserId == Guid.Empty)
+        {
+            throw new UnauthorizedApplicationException("Authentication is required.");
+        }
+
+        var user = await users.GetByIdAsync(currentUser.UserId, cancellationToken)
+            ?? throw new UnauthorizedApplicationException("The session is invalid.");
+        var normalizedEmail = RegisterCommandHandler.NormalizeEmail(command.Email);
+        var activated = await users.TryActivateCaregiverAsync(
+            user.Id,
+            user.Version,
+            user.Email,
+            normalizedEmail,
+            passwordHasher.Hash(command.Password),
+            cancellationToken);
+        if (activated is null)
+        {
+            if (await users.GetByEmailAsync(normalizedEmail, cancellationToken) is not null)
+            {
+                throw new ConflictException("The email is already registered.");
+            }
+
+            throw new ConflictException("The caregiver account is already activated or is not eligible.");
+        }
+
+        return RegisterCommandHandler.CreateResponse(
+            activated,
+            jwtTokenService.Create(
+                activated.Id,
+                activated.Email,
+                activated.PlanId,
+                activated.SecurityVersion));
+    }
+}
+
 public sealed class LoginCommandValidator : AbstractValidator<LoginCommand>
 {
     public LoginCommandValidator()
