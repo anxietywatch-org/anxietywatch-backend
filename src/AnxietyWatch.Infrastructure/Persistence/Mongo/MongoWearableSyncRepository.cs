@@ -1,11 +1,12 @@
 using System.Text.Json;
+using AnxietyWatch.Application.Features.Caregivers;
 using AnxietyWatch.Application.Features.Wearables;
 using MongoDB.Bson;
 using MongoDB.Driver;
 
 namespace AnxietyWatch.Infrastructure.Persistence.Mongo;
 
-public sealed class MongoWearableSyncRepository(MongoContext context) : IWearableSyncRepository
+public sealed class MongoWearableSyncRepository(MongoContext context) : IWearableSyncRepository, IPatientHeartRateRepository
 {
     private readonly IMongoCollection<BsonDocument> telemetry = context.Database.GetCollection<BsonDocument>("telemetry_batches");
     private readonly IMongoCollection<BsonDocument> sosEvents = context.Database.GetCollection<BsonDocument>("sos_events");
@@ -15,6 +16,33 @@ public sealed class MongoWearableSyncRepository(MongoContext context) : IWearabl
 
     public Task<bool> TryStoreTelemetryAsync(Guid userId, TelemetryBatchRequest batch, CancellationToken cancellationToken = default) =>
         TryInsertAsync(telemetry, batch.BatchId, userId, batch, cancellationToken);
+
+    public async Task<LatestHeartRateRecord?> GetLatestAsync(Guid patientId, CancellationToken cancellationToken = default)
+    {
+        var document = await telemetry.Aggregate()
+            .Match(Builders<BsonDocument>.Filter.Eq("userId", patientId.ToString()))
+            .Unwind("Samples")
+            .Match(Builders<BsonDocument>.Filter.Gt("Samples.HeartRateBpm", 0))
+            .Sort(Builders<BsonDocument>.Sort.Descending("Samples.Timestamp").Descending("_id"))
+            .Limit(1)
+            .Project(new BsonDocument
+            {
+                ["heartRateBpm"] = "$Samples.HeartRateBpm",
+                ["measuredAt"] = "$Samples.Timestamp",
+                ["quality"] = "$Samples.Quality.HeartRate"
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (document is null)
+        {
+            return null;
+        }
+
+        return new LatestHeartRateRecord(
+            document["heartRateBpm"].ToDouble(),
+            DateTimeOffset.Parse(document["measuredAt"].AsString),
+            document.TryGetValue("quality", out var quality) && !quality.IsBsonNull ? quality.AsString : null);
+    }
 
     public Task<bool> TryStoreSosAsync(Guid userId, SosTriggerRequest trigger, CancellationToken cancellationToken = default) =>
         TryInsertAsync(sosEvents, trigger.EventId, userId, trigger, cancellationToken);

@@ -6,13 +6,27 @@ namespace AnxietyWatch.Infrastructure.Persistence;
 
 public sealed record StoredTelemetryBatch(Guid UserId, TelemetryBatchRequest Batch);
 
-public sealed class InMemoryWearableSyncRepository : IWearableSyncRepository, IPatientEventRepository
+public sealed class InMemoryWearableSyncRepository : IWearableSyncRepository, IPatientEventRepository, IPatientHeartRateRepository
 {
     private readonly ConcurrentDictionary<Guid, StoredTelemetryBatch> telemetryBatches = new();
     private readonly ConcurrentDictionary<string, PatientEventRecord> events = new();
 
     public Task<bool> TryStoreTelemetryAsync(Guid userId, TelemetryBatchRequest batch, CancellationToken cancellationToken = default) =>
         Task.FromResult(telemetryBatches.TryAdd(batch.BatchId, new StoredTelemetryBatch(userId, batch)));
+
+    public Task<LatestHeartRateRecord?> GetLatestAsync(Guid patientId, CancellationToken cancellationToken = default)
+    {
+        var latest = telemetryBatches.Values
+            .Where(stored => stored.UserId == patientId)
+            .SelectMany(stored => stored.Batch.Samples)
+            .Where(sample => sample.HeartRateBpm is > 0)
+            .OrderByDescending(sample => sample.Timestamp)
+            .FirstOrDefault();
+
+        return Task.FromResult(latest is null
+            ? null
+            : new LatestHeartRateRecord(latest.HeartRateBpm!.Value, latest.Timestamp, latest.Quality?.HeartRate));
+    }
 
     public Task<bool> TryStoreSosAsync(Guid userId, SosTriggerRequest trigger, CancellationToken cancellationToken = default) =>
         Task.FromResult(events.TryAdd($"sos:{trigger.EventId}", new PatientEventRecord(userId, trigger.EventId, "SOS", trigger.TriggeredAt, "TRIGGERED")));

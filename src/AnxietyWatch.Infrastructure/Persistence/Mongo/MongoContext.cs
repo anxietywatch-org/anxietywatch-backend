@@ -55,6 +55,7 @@ public sealed class MongoContext
         CreateIndex("billing_transactions", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("createdAt"));
         CreateIndex("device_tokens", Builders<BsonDocument>.IndexKeys.Ascending("token"), unique: true);
         CreateIndex("device_tokens", Builders<BsonDocument>.IndexKeys.Ascending("userId"));
+        CreateIndex("telemetry_batches", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("Samples.Timestamp"));
         CreateIndex("sos_events", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("TriggeredAt"));
         CreateIndex("sos_cancellations", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("CancelledAt"));
         CreateIndex("suspected_events", Builders<BsonDocument>.IndexKeys.Ascending("userId").Descending("DetectedAt"));
