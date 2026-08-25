@@ -91,6 +91,36 @@ public sealed class MongoLinkTokenRepository(MongoContext context) : ILinkTokenR
         return await Collection.CountDocumentsAsync(filter, new CountOptions { Limit = 1 }, cancellationToken) == 1;
     }
 
+    public async Task<IReadOnlyList<AcceptedCaregiverRelationship>> GetAcceptedCaregiverRelationshipsAsync(
+        Guid caregiverId,
+        CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.And(
+            Builders<BsonDocument>.Filter.Eq("acceptedBy", caregiverId.ToString()),
+            Builders<BsonDocument>.Filter.Eq("status", Status(TokenStatus.Accepted)),
+            Builders<BsonDocument>.Filter.Eq("role", "family_member"),
+            Builders<BsonDocument>.Filter.Exists("acceptedAt"),
+            Builders<BsonDocument>.Filter.Ne("acceptedAt", BsonNull.Value));
+
+        var documents = await Collection.Find(filter)
+            .Project(Builders<BsonDocument>.Projection
+                .Include("userId")
+                .Include("role")
+                .Include("acceptedAt"))
+            .Sort(Builders<BsonDocument>.Sort.Ascending("userId").Ascending("acceptedAt"))
+            .ToListAsync(cancellationToken);
+
+        return documents
+            .GroupBy(document => document["userId"].AsString)
+            .Select(group => group.First())
+            .OrderByDescending(document => document["acceptedAt"].ToUniversalTime())
+            .Select(document => new AcceptedCaregiverRelationship(
+                Guid.Parse(document["userId"].AsString),
+                document["role"].AsString,
+                new DateTimeOffset(document["acceptedAt"].ToUniversalTime())))
+            .ToArray();
+    }
+
     public async Task<LinkToken?> TryRotateAsync(
         Guid id,
         Guid ownerId,

@@ -1,5 +1,7 @@
 namespace AnxietyWatch.Domain.Tokens;
 
+public sealed record AcceptedCaregiverRelationship(Guid PatientId, string Role, DateTimeOffset LinkedAt);
+
 public interface ILinkTokenRepository
 {
     Task<IReadOnlyList<LinkToken>> GetAsync(Guid userId, CancellationToken cancellationToken = default);
@@ -8,6 +10,9 @@ public interface ILinkTokenRepository
     Task<LinkToken?> GetByCodeAsync(string code, CancellationToken cancellationToken = default);
     Task<bool> HasAcceptedCaregiverRelationshipAsync(
         Guid patientId,
+        Guid caregiverId,
+        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<AcceptedCaregiverRelationship>> GetAcceptedCaregiverRelationshipsAsync(
         Guid caregiverId,
         CancellationToken cancellationToken = default);
     Task<LinkToken?> TryRotateAsync(

@@ -72,6 +72,32 @@ public sealed class InMemoryLinkTokenRepository : ILinkTokenRepository
         }
     }
 
+    public Task<IReadOnlyList<AcceptedCaregiverRelationship>> GetAcceptedCaregiverRelationshipsAsync(
+        Guid caregiverId,
+        CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            IReadOnlyList<AcceptedCaregiverRelationship> result = tokens.Values
+                .Where(token =>
+                    token.AcceptedBy == caregiverId &&
+                    token.Status == TokenStatus.Accepted &&
+                    string.Equals(token.Role, "family_member", StringComparison.Ordinal) &&
+                    token.AcceptedAt.HasValue)
+                .GroupBy(token => token.UserId)
+                .Select(group => group
+                    .OrderBy(token => token.AcceptedAt!.Value)
+                    .First())
+                .OrderByDescending(token => token.AcceptedAt!.Value)
+                .Select(token => new AcceptedCaregiverRelationship(
+                    token.UserId,
+                    token.Role,
+                    token.AcceptedAt!.Value))
+                .ToArray();
+            return Task.FromResult(result);
+        }
+    }
+
     public Task<LinkToken?> TryRotateAsync(
         Guid id,
         Guid ownerId,
