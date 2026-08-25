@@ -54,6 +54,10 @@ public sealed class CaregiverActivationEndpointTests(CustomWebApplicationFactory
         var linkedPatients = await relogin.GetFromJsonAsync<LinkedPatientResponse[]>("/api/caregiver/patients");
         linkedPatients.Should().ContainSingle();
         linkedPatients![0].FullName.Should().Be("owner");
+        var patientDetail = await relogin.GetFromJsonAsync<PatientDetailResponse>(
+            $"/api/caregiver/patients/{linkedPatients[0].PatientId}");
+        patientDetail!.FullName.Should().Be("owner");
+        patientDetail.PatientId.Should().Be(linkedPatients[0].PatientId);
     }
 
     [Fact]
@@ -234,4 +238,5 @@ public sealed class CaregiverActivationEndpointTests(CustomWebApplicationFactory
     private sealed record TokenRedeemResponse(string Token, DateTimeOffset ExpiresAt, string Role, UserResponse User);
     private sealed record UserResponse(string Id, string FullName, string Email, string PlanId, bool EmailVerified, string? AvatarUrl = null, string Role = "patient");
     private sealed record LinkedPatientResponse(string PatientId, string FullName, string? AvatarUrl, string Role, DateTimeOffset LinkedAt);
+    private sealed record PatientDetailResponse(string PatientId, string FullName, string? AvatarUrl);
 }

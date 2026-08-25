@@ -181,6 +181,119 @@ public sealed class CaregiverPatientsEndpointTests(CustomWebApplicationFactory f
         (await caregiver.GetFromJsonAsync<LinkedPatientResponse[]>("/api/caregiver/patients")).Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task LinkedPatientDetail_ReturnsOnlySafeBasicFields()
+    {
+        var (caregiver, caregiverId) = await CreateAuthenticatedUserAsync("Caregiver User");
+        var patientId = await CreateLinkedPatientAsync(caregiverId, "Patient Detail", DateTimeOffset.UtcNow);
+
+        var response = await caregiver.GetAsync($"/api/caregiver/patients/{patientId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+        var patient = document.RootElement;
+        patient.GetProperty("patientId").GetGuid().Should().Be(patientId);
+        patient.GetProperty("fullName").GetString().Should().Be("Patient Detail");
+        patient.GetProperty("avatarUrl").ValueKind.Should().Be(JsonValueKind.Null);
+        foreach (var field in new[]
+        {
+            "email", "passwordHash", "securityVersion", "planId", "token", "code",
+            "quotaSlot", "acceptedBy", "deviceId", "privateMode", "allergies",
+            "currentMedications", "emergencyContactName", "emergencyContactPhone",
+            "previousAnxietyDiagnosis", "treatingProfessional", "telemetry", "events"
+        })
+        {
+            patient.TryGetProperty(field, out _).Should().BeFalse(field);
+        }
+    }
+
+    [Fact]
+    public async Task UnauthenticatedPatientDetail_ReturnsUnauthorized()
+    {
+        using var client = factory.CreateClient();
+
+        (await client.GetAsync($"/api/caregiver/patients/{Guid.NewGuid()}"))
+            .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task WrongCaregiverAndNonLinkedPatient_AreDenied()
+    {
+        var (caregiver, caregiverId) = await CreateAuthenticatedUserAsync("Caregiver User");
+        var (_, otherCaregiverId) = await CreateAuthenticatedUserAsync("Other Caregiver");
+        var patientId = await CreateLinkedPatientAsync(otherCaregiverId, "Private Patient", DateTimeOffset.UtcNow);
+
+        var response = await caregiver.GetAsync($"/api/caregiver/patients/{patientId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response = await caregiver.GetAsync($"/api/caregiver/patients/{Guid.NewGuid()}");
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        caregiverId.Should().NotBe(otherCaregiverId);
+    }
+
+    [Theory]
+    [InlineData(TokenStatus.Pending, "family_member")]
+    [InlineData(TokenStatus.Accepted, "self")]
+    [InlineData(TokenStatus.Accepted, "patient")]
+    public async Task IneligibleRelationships_AreDenied(TokenStatus status, string role)
+    {
+        var (caregiver, caregiverId) = await CreateAuthenticatedUserAsync("Caregiver User");
+        var patientId = await CreateLinkedPatientAsync(caregiverId, "Hidden Patient", DateTimeOffset.UtcNow, status, role);
+
+        (await caregiver.GetAsync($"/api/caregiver/patients/{patientId}"))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Revocation_DeniesSameJwtImmediately()
+    {
+        var (caregiver, caregiverId) = await CreateAuthenticatedUserAsync("Caregiver User");
+        var token = await CreateLinkedTokenAsync(caregiverId, "Revoked Patient", DateTimeOffset.UtcNow);
+        (await caregiver.GetAsync($"/api/caregiver/patients/{token.UserId}"))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await WithTokensAsync(tokens => tokens.TryRevokeAsync(token.Id));
+
+        (await caregiver.GetAsync($"/api/caregiver/patients/{token.UserId}"))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task MultipleCaregiversRemainIsolatedAfterOneIsRevoked()
+    {
+        var (first, firstId) = await CreateAuthenticatedUserAsync("First Caregiver");
+        var (second, secondId) = await CreateAuthenticatedUserAsync("Second Caregiver");
+        var patientId = await CreatePatientAsync("Shared Patient");
+        var firstToken = await AddRelationshipAsync(patientId, firstId, TokenStatus.Accepted, "family_member", DateTimeOffset.UtcNow);
+        await AddRelationshipAsync(patientId, secondId, TokenStatus.Accepted, "family_member", DateTimeOffset.UtcNow);
+
+        (await first.GetAsync($"/api/caregiver/patients/{patientId}")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await second.GetAsync($"/api/caregiver/patients/{patientId}")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await WithTokensAsync(tokens => tokens.TryRevokeAsync(firstToken.Id));
+
+        (await first.GetAsync($"/api/caregiver/patients/{patientId}")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await second.GetAsync($"/api/caregiver/patients/{patientId}")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task OneCaregiverCanReadMultiplePatientsAndMissingAcceptedUserIsNotFabricated()
+    {
+        var (caregiver, caregiverId) = await CreateAuthenticatedUserAsync("Caregiver User");
+        var firstPatient = await CreateLinkedPatientAsync(caregiverId, "First Patient", DateTimeOffset.UtcNow);
+        var secondPatient = await CreateLinkedPatientAsync(caregiverId, "Second Patient", DateTimeOffset.UtcNow);
+        var missingPatient = Guid.NewGuid();
+        await AddRelationshipAsync(missingPatient, caregiverId, TokenStatus.Accepted, "family_member", DateTimeOffset.UtcNow);
+
+        (await caregiver.GetFromJsonAsync<PatientDetailResponse>($"/api/caregiver/patients/{firstPatient}"))!
+            .FullName.Should().Be("First Patient");
+        (await caregiver.GetFromJsonAsync<PatientDetailResponse>($"/api/caregiver/patients/{secondPatient}"))!
+            .FullName.Should().Be("Second Patient");
+        (await caregiver.GetAsync($"/api/caregiver/patients/{missingPatient}"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     private async Task<(HttpClient Client, Guid UserId)> CreateAuthenticatedUserAsync(string fullName)
     {
         var client = factory.CreateClient();
@@ -268,4 +381,5 @@ public sealed class CaregiverPatientsEndpointTests(CustomWebApplicationFactory f
         string? AvatarUrl,
         string Role,
         DateTimeOffset LinkedAt);
+    private sealed record PatientDetailResponse(Guid PatientId, string FullName, string? AvatarUrl);
 }
