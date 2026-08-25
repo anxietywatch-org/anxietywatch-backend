@@ -14,6 +14,12 @@ public sealed class CaregiverActivationEndpointTests(CustomWebApplicationFactory
     {
         var owner = await RegisterAsync("owner");
         using var ownerClient = owner.Client;
+        (await ownerClient.PostAsJsonAsync("/api/episodes", new
+        {
+            intensity = 65,
+            symptoms = new[] { "owner-symptom" },
+            notes = "owner episode note"
+        })).StatusCode.Should().Be(HttpStatusCode.Created);
         var tokenResponse = await ownerClient.PostAsJsonAsync("/api/tokens", new { role = "family_member" });
         var created = await tokenResponse.Content.ReadFromJsonAsync<TokenResponse>();
 
@@ -58,6 +64,10 @@ public sealed class CaregiverActivationEndpointTests(CustomWebApplicationFactory
             $"/api/caregiver/patients/{linkedPatients[0].PatientId}");
         patientDetail!.FullName.Should().Be("owner");
         patientDetail.PatientId.Should().Be(linkedPatients[0].PatientId);
+        var episodes = await relogin.GetFromJsonAsync<PatientEpisodeResponse[]>(
+            $"/api/caregiver/patients/{linkedPatients[0].PatientId}/episodes");
+        episodes.Should().ContainSingle();
+        episodes![0].Intensity.Should().Be(65);
     }
 
     [Fact]
@@ -239,4 +249,10 @@ public sealed class CaregiverActivationEndpointTests(CustomWebApplicationFactory
     private sealed record UserResponse(string Id, string FullName, string Email, string PlanId, bool EmailVerified, string? AvatarUrl = null, string Role = "patient");
     private sealed record LinkedPatientResponse(string PatientId, string FullName, string? AvatarUrl, string Role, DateTimeOffset LinkedAt);
     private sealed record PatientDetailResponse(string PatientId, string FullName, string? AvatarUrl);
+    private sealed record PatientEpisodeResponse(
+        DateTimeOffset Date,
+        int Intensity,
+        IReadOnlyCollection<string>? Symptoms,
+        string? Notes,
+        bool DetailsHidden);
 }

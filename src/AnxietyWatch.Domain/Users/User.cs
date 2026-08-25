@@ -41,7 +41,8 @@ public sealed class User : AggregateRoot
         string? emergencyContactName = null,
         string? emergencyContactPhone = null,
         bool? previousAnxietyDiagnosis = null,
-        string? treatingProfessional = null)
+        string? treatingProfessional = null,
+        bool privateModeResolved = true)
     {
         var user = new User(id, fullName, email, passwordHash, planId, role)
         {
@@ -61,7 +62,8 @@ public sealed class User : AggregateRoot
             EmergencyContactName = emergencyContactName,
             EmergencyContactPhone = emergencyContactPhone,
             PreviousAnxietyDiagnosis = previousAnxietyDiagnosis,
-            TreatingProfessional = treatingProfessional
+            TreatingProfessional = treatingProfessional,
+            PrivateModeResolved = privateModeResolved
         };
 
         return user;
@@ -78,6 +80,7 @@ public sealed class User : AggregateRoot
     public int AnxietyThreshold { get; private set; } = 70;
     public bool PushNotifications { get; private set; } = true;
     public bool PrivateMode { get; private set; }
+    public bool PrivateModeResolved { get; private set; } = true;
     public int FailedLoginAttempts { get; private set; }
     public DateTimeOffset? FirstFailedLoginAt { get; private set; }
     public DateTimeOffset? LockoutUntil { get; private set; }
