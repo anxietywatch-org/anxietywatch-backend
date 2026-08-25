@@ -99,6 +99,67 @@ public sealed class MongoCorePersistenceTests : IClassFixture<MongoDbContainerFi
     }
 
     [Fact]
+    public async Task UserRepository_CaregiverActivation_RacesRegistrationForEmailWithoutHalfActivation()
+    {
+        var caregiver = new User(
+            Guid.NewGuid(),
+            "Cuidador",
+            "caregiver+temporary@device.anxietywatch.internal",
+            "placeholder",
+            "free",
+            "family_member");
+        var claimant = new User(Guid.NewGuid(), "Claimant", "race@example.test", "claimant-hash", "free");
+        await users.AddAsync(caregiver);
+
+        async Task<bool> ActivateAsync()
+        {
+            try
+            {
+                return await users.TryActivateCaregiverAsync(
+                    caregiver.Id,
+                    caregiver.Version,
+                    caregiver.Email,
+                    claimant.Email,
+                    "caregiver-hash") is not null;
+            }
+            catch (ConflictException)
+            {
+                return false;
+            }
+        }
+
+        async Task<bool> RegisterAsync()
+        {
+            try
+            {
+                await users.AddAsync(claimant);
+                return true;
+            }
+            catch (ConflictException)
+            {
+                return false;
+            }
+        }
+
+        var results = await Task.WhenAll(ActivateAsync(), RegisterAsync());
+
+        results.Count(result => result).Should().Be(1);
+        var stored = await users.GetByIdAsync(caregiver.Id);
+        if (results[0])
+        {
+            stored!.Email.Should().Be(claimant.Email);
+            stored.PasswordHash.Should().Be("caregiver-hash");
+            stored.SecurityVersion.Should().Be(1);
+        }
+        else
+        {
+            stored!.Email.Should().Be(caregiver.Email);
+            stored.PasswordHash.Should().Be("placeholder");
+            stored.SecurityVersion.Should().Be(0);
+        }
+    }
+
+    [Fact]
     public async Task UserRepository_ShouldRejectStaleWritesAndLockConcurrentFailures()
     {
         var now = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
