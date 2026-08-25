@@ -6,6 +6,10 @@ public interface ILinkTokenRepository
     Task<bool> TryAddAsync(LinkToken token, int maximum, CancellationToken cancellationToken = default);
     Task<LinkToken?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<LinkToken?> GetByCodeAsync(string code, CancellationToken cancellationToken = default);
+    Task<bool> HasAcceptedCaregiverRelationshipAsync(
+        Guid patientId,
+        Guid caregiverId,
+        CancellationToken cancellationToken = default);
     Task<LinkToken?> TryRotateAsync(
         Guid id,
         Guid ownerId,

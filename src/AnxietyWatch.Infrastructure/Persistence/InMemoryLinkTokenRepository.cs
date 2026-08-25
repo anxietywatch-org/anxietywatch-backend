@@ -57,6 +57,21 @@ public sealed class InMemoryLinkTokenRepository : ILinkTokenRepository
         }
     }
 
+    public Task<bool> HasAcceptedCaregiverRelationshipAsync(
+        Guid patientId,
+        Guid caregiverId,
+        CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            return Task.FromResult(tokens.Values.Any(token =>
+                token.UserId == patientId &&
+                token.AcceptedBy == caregiverId &&
+                token.Status == TokenStatus.Accepted &&
+                string.Equals(token.Role, "family_member", StringComparison.Ordinal)));
+        }
+    }
+
     public Task<LinkToken?> TryRotateAsync(
         Guid id,
         Guid ownerId,
