@@ -14,4 +14,10 @@ public sealed class CaregiverController(ISender sender) : ControllerBase
     public async Task<ActionResult<IReadOnlyList<LinkedPatientResponse>>> Patients(
         CancellationToken cancellationToken) =>
         Ok(await sender.Send(new GetLinkedPatientsQuery(), cancellationToken));
+
+    [HttpGet("patients/{patientId:guid}")]
+    public async Task<ActionResult<PatientDetailResponse>> Patient(
+        Guid patientId,
+        CancellationToken cancellationToken) =>
+        Ok(await sender.Send(new GetPatientDetailQuery(patientId), cancellationToken));
 }
