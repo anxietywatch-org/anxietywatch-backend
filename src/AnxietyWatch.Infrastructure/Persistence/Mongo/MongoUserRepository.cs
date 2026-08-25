@@ -387,7 +387,8 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
         ReadString(document, "emergencyContactName"),
         ReadString(document, "emergencyContactPhone"),
         ReadNullableBool(document, "previousAnxietyDiagnosis"),
-        ReadString(document, "treatingProfessional"));
+        ReadString(document, "treatingProfessional"),
+        document.Contains("privateMode"));
 
     private static void AddOptional(BsonDocument document, string name, DateTimeOffset? value)
     {

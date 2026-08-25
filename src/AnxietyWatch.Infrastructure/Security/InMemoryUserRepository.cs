@@ -263,7 +263,8 @@ public sealed class InMemoryUserRepository : IUserRepository
         user.EmergencyContactName,
         user.EmergencyContactPhone,
         user.PreviousAnxietyDiagnosis,
-        user.TreatingProfessional);
+        user.TreatingProfessional,
+        user.PrivateModeResolved);
 
     private sealed record VerificationToken(Guid UserId, DateTimeOffset ExpiresAt);
 }

@@ -20,4 +20,11 @@ public sealed class CaregiverController(ISender sender) : ControllerBase
         Guid patientId,
         CancellationToken cancellationToken) =>
         Ok(await sender.Send(new GetPatientDetailQuery(patientId), cancellationToken));
+
+    [HttpGet("patients/{patientId:guid}/episodes")]
+    public async Task<ActionResult<IReadOnlyList<CaregiverEpisodeResponse>>> Episodes(
+        Guid patientId,
+        [FromQuery] int range = 7,
+        CancellationToken cancellationToken = default) =>
+        Ok(await sender.Send(new GetCaregiverPatientEpisodesQuery(patientId, range), cancellationToken));
 }
