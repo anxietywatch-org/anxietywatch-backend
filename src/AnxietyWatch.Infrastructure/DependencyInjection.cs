@@ -75,7 +75,8 @@ public static class DependencyInjection
             services.AddSingleton<MongoContext>();
             services.AddSingleton<IPlanRepository, MongoPlanRepository>();
             services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IWearableSyncRepository, MongoWearableSyncRepository>();
-            services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IEventInferenceRepository, MongoEventInferenceRepository>();
+             services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IEventInferenceRepository, MongoEventInferenceRepository>();
+             services.AddSingleton<AnxietyWatch.Application.Features.Caregivers.IPatientEventRepository, MongoPatientEventRepository>();
             services.AddSingleton<ISupportTicketRepository, MongoSupportTicketRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Billing.IBillingTransactionRepository, MongoBillingTransactionRepository>();
             services.AddSingleton<IUserRepository, MongoUserRepository>();
@@ -88,8 +89,10 @@ public static class DependencyInjection
         else
         {
             services.AddSingleton<IPlanRepository, InMemoryPlanRepository>();
-            services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IWearableSyncRepository, InMemoryWearableSyncRepository>();
-            services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IEventInferenceRepository, InMemoryEventInferenceRepository>();
+             services.AddSingleton<InMemoryWearableSyncRepository>();
+             services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IWearableSyncRepository>(serviceProvider => serviceProvider.GetRequiredService<InMemoryWearableSyncRepository>());
+             services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IEventInferenceRepository, InMemoryEventInferenceRepository>();
+             services.AddSingleton<AnxietyWatch.Application.Features.Caregivers.IPatientEventRepository>(serviceProvider => serviceProvider.GetRequiredService<InMemoryWearableSyncRepository>());
             services.AddSingleton<ISupportTicketRepository, InMemorySupportTicketRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Billing.IBillingTransactionRepository, InMemoryBillingTransactionRepository>();
             services.AddSingleton<IUserRepository, InMemoryUserRepository>();
