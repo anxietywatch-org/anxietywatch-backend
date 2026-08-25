@@ -252,6 +252,44 @@ public sealed class MongoCaregiverRelationshipAuthorizationTests : IClassFixture
             .Should().BeTrue();
     }
 
+    [Fact]
+    public async Task ConcurrentAcceptanceOfSameInvitationHasExactlyOneWinner()
+    {
+        var token = NewToken(Guid.NewGuid());
+        (await tokens.TryAddAsync(token, 10)).Should().BeTrue();
+        var firstCaregiver = Guid.NewGuid();
+        var secondCaregiver = Guid.NewGuid();
+        var acceptedAt = DateTimeOffset.UtcNow;
+
+        var results = await Task.WhenAll(
+            tokens.TryAcceptAsync(token.Id, token.Code, firstCaregiver, acceptedAt),
+            tokens.TryAcceptAsync(token.Id, token.Code, secondCaregiver, acceptedAt));
+
+        results.Count(result => result).Should().Be(1);
+        var persisted = await tokens.GetByIdAsync(token.Id);
+        persisted!.AcceptedBy.Should().NotBeNull();
+        new[] { firstCaregiver, secondCaregiver }.Should().Contain(persisted.AcceptedBy!.Value);
+        (await tokens.HasAcceptedCaregiverRelationshipAsync(token.UserId, firstCaregiver) ^
+         await tokens.HasAcceptedCaregiverRelationshipAsync(token.UserId, secondCaregiver)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SameCaregiverCanConcurrentlyAcceptDifferentPatientInvitations()
+    {
+        var caregiverId = Guid.NewGuid();
+        var first = NewToken(Guid.NewGuid());
+        var second = NewToken(Guid.NewGuid());
+        (await tokens.TryAddAsync(first, 10)).Should().BeTrue();
+        (await tokens.TryAddAsync(second, 10)).Should().BeTrue();
+
+        var results = await Task.WhenAll(
+            tokens.TryAcceptAsync(first.Id, first.Code, caregiverId, DateTimeOffset.UtcNow),
+            tokens.TryAcceptAsync(second.Id, second.Code, caregiverId, DateTimeOffset.UtcNow));
+
+        results.Should().OnlyContain(result => result);
+        (await tokens.GetAcceptedCaregiverRelationshipsAsync(caregiverId)).Should().HaveCount(2);
+    }
+
     private async Task<LinkToken> AddAcceptedAsync(
         Guid patientId,
         Guid caregiverId,

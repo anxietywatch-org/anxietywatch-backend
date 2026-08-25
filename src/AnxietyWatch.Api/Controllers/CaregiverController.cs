@@ -15,6 +15,12 @@ public sealed class CaregiverController(ISender sender) : ControllerBase
         CancellationToken cancellationToken) =>
         Ok(await sender.Send(new GetLinkedPatientsQuery(), cancellationToken));
 
+    [HttpPost("patients/link")]
+    public async Task<ActionResult<LinkAdditionalPatientResponse>> LinkPatient(
+        LinkAdditionalPatientCommand command,
+        CancellationToken cancellationToken) =>
+        Ok(await sender.Send(command, cancellationToken));
+
     [HttpGet("patients/{patientId:guid}")]
     public async Task<ActionResult<PatientDetailResponse>> Patient(
         Guid patientId,
@@ -35,6 +41,7 @@ public sealed class CaregiverController(ISender sender) : ControllerBase
         CancellationToken cancellationToken = default) =>
         Ok(await sender.Send(new GetCaregiverPatientEventsQuery(patientId, limit), cancellationToken));
 
+    [HttpGet("patients/{patientId:guid}/telemetry/latest")]
     [HttpGet("patients/{patientId:guid}/heart-rate/latest")]
     public async Task<ActionResult<CaregiverLatestHeartRateResponse>> LatestHeartRate(
         Guid patientId,
