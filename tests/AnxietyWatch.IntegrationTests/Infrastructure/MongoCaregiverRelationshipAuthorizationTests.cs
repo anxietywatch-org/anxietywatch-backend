@@ -110,11 +110,45 @@ public sealed class MongoCaregiverRelationshipAuthorizationTests : IClassFixture
     }
 
     [Fact]
+    public async Task AcceptedRelationship_SurvivesOriginalTokenExpiryUntilRevoked()
+    {
+        var patientId = Guid.NewGuid();
+        var caregiverId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var token = new LinkToken(Guid.NewGuid(), patientId, Code(), "family_member", now.AddMinutes(5));
+        (await tokens.TryAddAsync(token, 10)).Should().BeTrue();
+        (await tokens.TryAcceptAsync(token.Id, token.Code, caregiverId, now)).Should().BeTrue();
+
+        var afterOriginalExpiry = now.AddMinutes(6);
+        var accepted = await tokens.GetByIdAsync(token.Id);
+        accepted!.ExpiresAt.Should().BeBefore(afterOriginalExpiry);
+        accepted.Status.Should().Be(TokenStatus.Accepted);
+        (await tokens.HasAcceptedCaregiverRelationshipAsync(patientId, caregiverId)).Should().BeTrue();
+
+        (await tokens.TryRevokeAsync(token.Id)).Should().BeTrue();
+
+        (await tokens.HasAcceptedCaregiverRelationshipAsync(patientId, caregiverId)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task SelfRole_DoesNotCreateCrossUserCaregiverAccess()
     {
         var patientId = Guid.NewGuid();
         var caregiverId = Guid.NewGuid();
         await AddAcceptedAsync(patientId, caregiverId, "self");
+
+        (await tokens.HasAcceptedCaregiverRelationshipAsync(patientId, caregiverId)).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("patient")]
+    [InlineData("unknown")]
+    [InlineData("FAMILY_MEMBER")]
+    public async Task NonExactFamilyMemberRole_DoesNotCreateCaregiverAccess(string role)
+    {
+        var patientId = Guid.NewGuid();
+        var caregiverId = Guid.NewGuid();
+        await AddAcceptedAsync(patientId, caregiverId, role);
 
         (await tokens.HasAcceptedCaregiverRelationshipAsync(patientId, caregiverId)).Should().BeFalse();
     }

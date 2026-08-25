@@ -68,7 +68,7 @@ public sealed class InMemoryLinkTokenRepository : ILinkTokenRepository
                 token.UserId == patientId &&
                 token.AcceptedBy == caregiverId &&
                 token.Status == TokenStatus.Accepted &&
-                string.Equals(token.Role, "family_member", StringComparison.OrdinalIgnoreCase)));
+                string.Equals(token.Role, "family_member", StringComparison.Ordinal)));
         }
     }
 
