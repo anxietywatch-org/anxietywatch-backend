@@ -156,6 +156,23 @@ public sealed class CaregiverActivationEndpointTests(CustomWebApplicationFactory
         loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [Fact]
+    public async Task ActivatedCaregiver_ShouldUseExistingVerificationResendFlow()
+    {
+        var caregiver = await RedeemCaregiverAsync();
+        var activation = await caregiver.Client.PostAsJsonAsync("/api/auth/caregiver/activate", new
+        {
+            email = "caregiver-verification@example.test",
+            password = "CaregiverPassword1"
+        });
+        var auth = await activation.Content.ReadFromJsonAsync<AuthResponse>();
+        caregiver.Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth!.Token);
+
+        var resend = await caregiver.Client.PostAsync("/api/auth/verify-email/resend", null);
+
+        resend.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     private async Task<(HttpClient Client, string Email)> RegisterAsync(string suffix)
     {
         var client = factory.CreateClient();
