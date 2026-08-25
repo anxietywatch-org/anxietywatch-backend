@@ -122,6 +122,40 @@ public sealed class CaregiverActivationEndpointTests(CustomWebApplicationFactory
         (await caregiver.Client.GetAsync("/api/auth/session")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [Fact]
+    public async Task ConcurrentActivation_ShouldHaveExactlyOneWinner()
+    {
+        var caregiver = await RedeemCaregiverAsync();
+        using var requestA = new HttpRequestMessage(HttpMethod.Post, "/api/auth/caregiver/activate")
+        {
+            Content = JsonContent.Create(new { email = "caregiver-a@example.test", password = "CaregiverPassword1" })
+        };
+        using var requestB = new HttpRequestMessage(HttpMethod.Post, "/api/auth/caregiver/activate")
+        {
+            Content = JsonContent.Create(new { email = "caregiver-b@example.test", password = "CaregiverPassword2" })
+        };
+
+        var responses = await Task.WhenAll(
+            caregiver.Client.SendAsync(requestA),
+            caregiver.Client.SendAsync(requestB));
+
+        responses.Count(response => response.StatusCode == HttpStatusCode.OK).Should().Be(1);
+        responses.Count(response => response.StatusCode == HttpStatusCode.Conflict).Should().Be(1);
+        var winner = responses.Single(response => response.StatusCode == HttpStatusCode.OK);
+        var auth = await winner.Content.ReadFromJsonAsync<AuthResponse>();
+        auth!.User.Email.Should().BeOneOf("caregiver-a@example.test", "caregiver-b@example.test");
+
+        using var login = factory.CreateClient();
+        var loginResponse = await login.PostAsJsonAsync("/api/auth/login", new
+        {
+            email = auth.User.Email,
+            password = auth.User.Email.Contains("-a@", StringComparison.Ordinal)
+                ? "CaregiverPassword1"
+                : "CaregiverPassword2"
+        });
+        loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     private async Task<(HttpClient Client, string Email)> RegisterAsync(string suffix)
     {
         var client = factory.CreateClient();
