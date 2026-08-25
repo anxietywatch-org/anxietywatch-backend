@@ -34,4 +34,13 @@ public sealed class CaregiverController(ISender sender) : ControllerBase
         [FromQuery] int limit = 50,
         CancellationToken cancellationToken = default) =>
         Ok(await sender.Send(new GetCaregiverPatientEventsQuery(patientId, limit), cancellationToken));
+
+    [HttpGet("patients/{patientId:guid}/heart-rate/latest")]
+    public async Task<ActionResult<CaregiverLatestHeartRateResponse>> LatestHeartRate(
+        Guid patientId,
+        CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(new GetCaregiverLatestHeartRateQuery(patientId), cancellationToken);
+        return result is null ? NoContent() : Ok(result);
+    }
 }
