@@ -132,6 +132,10 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
         {
             throw new ConflictException("The email is already registered.");
         }
+        catch (MongoCommandException exception) when (exception.Code == 11000)
+        {
+            throw new ConflictException("The email is already registered.");
+        }
     }
 
     public async Task<User?> RegisterFailedLoginAsync(
