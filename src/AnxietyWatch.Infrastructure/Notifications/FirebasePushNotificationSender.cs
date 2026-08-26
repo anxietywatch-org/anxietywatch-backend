@@ -36,7 +36,9 @@ public sealed class FirebasePushNotificationSender : IPushNotificationSender
         {
             await messaging.SendAsync(new Message
             {
-                Fid = registrationToken,
+#pragma warning disable CS0618 // FCM registration-token targeting remains the public device contract during FID migration.
+                Token = registrationToken,
+#pragma warning restore CS0618
                 Data = payload.ToData().ToDictionary(pair => pair.Key, pair => pair.Value)
             }, cancellationToken);
             return new(PushSendOutcome.Success);

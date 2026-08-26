@@ -11,6 +11,11 @@ services:
       Mongo__ConnectionString: ${MONGO_ATLAS_CONNECTION_STRING}
       Mongo__DatabaseName: anxietywatch
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
+      Firebase__Enabled: ${FIREBASE_ENABLED:-false}
+      Notifications__WorkerEnabled: ${NOTIFICATIONS_WORKER_ENABLED:-false}
+      Firebase__CredentialsPath: ${FIREBASE_CREDENTIALS_PATH:-}
+      Firebase__CredentialsJson: ${FIREBASE_CREDENTIALS_JSON:-}
+      Firebase__ProjectId: ${FIREBASE_PROJECT_ID:-}
       Email__Provider: ${EMAIL_PROVIDER:-Resend}
       Email__Resend__ApiKey: ${RESEND_API_KEY:-}
       Email__From: ${EMAIL_FROM:-AnxietyWatch <no-reply@mail.mangoon.xyz>}
