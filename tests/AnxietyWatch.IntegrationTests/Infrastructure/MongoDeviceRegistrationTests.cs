@@ -74,7 +74,8 @@ public sealed class MongoDeviceRegistrationTests : IClassFixture<MongoDbContaine
         var indexes = await cursor.ToListAsync();
 
         indexes.Should().Contain(index =>
-            index["unique"].ToBoolean() && index["key"].AsBsonDocument.Contains("token"));
+            index.GetValue("unique", false).ToBoolean() &&
+            index["key"].AsBsonDocument.Contains("token"));
         indexes.Should().Contain(index => index["key"].AsBsonDocument.Contains("userId"));
     }
 
