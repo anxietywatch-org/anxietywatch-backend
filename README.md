@@ -211,6 +211,111 @@ Responde `{ "message": "Email verified" }` y `GET /api/auth/verify-email/status`
 - `intensity` 0-100; `notes` máx. 500 caracteres.
 - `403` en plan `free` al superar 5 episodios por semana.
 
+### Historial de eventos del paciente
+
+#### GET /api/events?limit=50 — 200 (protegido)
+
+Requiere Bearer JWT. El paciente se identifica exclusivamente con el usuario
+autenticado (`ICurrentUser.UserId`); el cliente no envía `patientId` ni `userId`.
+`limit` acepta `1..100` y por defecto es `50`. La respuesta se ordena por
+`occurredAt DESC` y después `eventId DESC`; un historial vacío devuelve `200`
+con `[]`.
+
+El DTO contiene únicamente `eventId`, `type`, `occurredAt` y `status`:
+
+```json
+[
+  {
+    "eventId": "guid",
+    "type": "SOS",
+    "occurredAt": "2026-08-26T12:34:56Z",
+    "status": "TRIGGERED"
+  }
+]
+```
+
+`SOS` es un evento SOS manual. `SUSPECTED_EVENT` representa el ciclo factual
+de evento sospechoso, con estados como `DETECTED`, `ACTIVITY_CONFIRMED`,
+`USER_OK` y `SUPPORT_REQUESTED`; `SUPPORT_REQUESTED` no es SOS. `ACTIVITY_CONFIRMED`
+no confirma clínicamente ansiedad y `USER_OK` no es un diagnóstico ni una
+clasificación del modelo. Una inferencia ML por sí sola no crea una fila.
+
+Este endpoint no devuelve BPM, telemetría cruda, IBI, movimiento, temperatura,
+identificadores de paciente/usuario/dispositivo/sesión, probabilidades o
+scores ML, vectores de características, metadatos de modelo, tokens FCM,
+datos de autenticación, score clínico ni anxiety score. Para una gráfica, el
+cliente puede agregar eventos factuales por fecha u hora (fecha → cantidad de
+eventos); no debe inventar un score clínico, de severidad, pánico o confianza ML.
+
+`/api/episodes` conserva los registros de episodios guardados manualmente;
+`/api/events` es el historial factual de eventos/alertas del paciente.
+
+### Cuidador / familiar
+
+El acceso de cuidador requiere una relación persistida aceptada con rol
+`family_member`. El flujo usa la sesión propia autenticada del cuidador: puede
+listar pacientes vinculados, añadir otros sin reemplazar su sesión y leer
+detalles, episodios, eventos y telemetría reciente sólo de pacientes
+autorizados.
+
+#### GET /api/caregiver/patients — 200 (protegido)
+
+Requiere Bearer JWT. Devuelve sólo pacientes de relaciones aceptadas
+`family_member`, con `patientId`, `fullName`, `avatarUrl`, `role` y `linkedAt`.
+Cero pacientes es válido y un cuidador puede tener varios. Relaciones
+pendientes, revocadas, `self` o de rol `patient` quedan excluidas.
+
+#### POST /api/caregiver/patients/link — 200 (protegido)
+
+Usa el JWT existente del cuidador y recibe `{ "code": "AW-..." }`. El código
+debe corresponder a una invitación pendiente y no expirada creada por el
+paciente con rol `family_member`; no se debe usar un código de rol `patient`.
+El rol representa el acceso concedido al cuidador, aunque la interfaz diga
+“añadir paciente”. El endpoint no crea otra cuenta, no reemplaza el JWT o la
+sesión y conserva las relaciones existentes, por lo que permite vincular
+pacientes adicionales al mismo cuidador.
+
+#### GET /api/caregiver/patients/{patientId} — 200 (protegido)
+
+Requiere Bearer JWT y valida la relación persistida antes de consultar al
+paciente. Devuelve sólo `patientId`, `fullName` y `avatarUrl`.
+
+#### GET /api/caregiver/patients/{patientId}/episodes?range=7 — 200
+
+`range` admite `7`, `30` o `90` días y por defecto es `7`. Con `PrivateMode=false`
+puede devolver `symptoms` y `notes`; con `PrivateMode=true` ambos son `null` y
+`detailsHidden=true`. Un estado PrivateMode legado no resoluble falla cerrado.
+PrivateMode no modifica los contratos de eventos ni de telemetría.
+
+#### GET /api/caregiver/patients/{patientId}/events?limit=50 — 200
+
+`limit` admite `1..100` y por defecto es `50`; la línea de tiempo es más nueva
+primero. El DTO contiene sólo `eventId`, `type`, `occurredAt` y `status`.
+Evento sospechoso y decisión con el mismo `eventId` forman un elemento lógico;
+SOS tiene su propio ciclo de trigger/cancelación. `SUPPORT_REQUESTED` no es SOS,
+la inferencia sola no se expone y no se devuelve telemetría cruda, probabilidad
+ni score ML.
+
+#### GET /api/caregiver/patients/{patientId}/telemetry/latest — 200/204
+
+Es la ruta canónica; `/api/caregiver/patients/{patientId}/heart-rate/latest`
+es un alias de compatibilidad y ambos tienen la misma conducta. Con BPM
+positivo usable devuelve `200`:
+
+```json
+{
+  "heartRateBpm": 82,
+  "measuredAt": "2026-08-25T20:30:00Z",
+  "ageSeconds": 18,
+  "quality": "good"
+}
+```
+
+Si nunca hubo telemetría, no hay datos de wearable sincronizados o no existe
+BPM positivo usable, devuelve `204 No Content` (no `500` y no un punto falso
+con BPM `0`). Es telemetría informativa sin interpretación clínica; no incluye
+IBI, movimiento, temperatura, identificadores de dispositivo/sesión ni campos ML.
+
 ### Tokens de vinculación (protegido)
 
 #### GET /api/tokens — 200
@@ -375,6 +480,22 @@ credenciales válida, el proceso falla claramente al arrancar. CI y desarrollo
 no requieren credenciales. Tras cambiar estos valores se debe reiniciar o
 redesplegar el API; nunca se debe guardar la Service Account en Git, imágenes o
 logs.
+
+### Ingesta Wearable (contratos estables)
+
+Los cinco endpoints protegidos de escritura son:
+
+- `POST /api/v1/telemetry/batch`
+- `POST /api/v1/sos/trigger`
+- `POST /api/v1/sos/cancel`
+- `POST /api/v1/events/suspected`
+- `POST /api/v1/events/decision`
+
+Las escrituras aceptadas son idempotentes: la primera inserción responde `202`
+y un duplicado responde `200`. Para un mismo `eventId`, el orden conceptual es
+ACK de telemetría → ACK de sospecha → ACK de decisión. SOS mantiene un ciclo
+independiente. Las decisiones admitidas son `ACTIVITY_CONFIRMED`, `USER_OK` y
+`SUPPORT_REQUESTED`; este último no es SOS.
 
 ### Contenido
 
