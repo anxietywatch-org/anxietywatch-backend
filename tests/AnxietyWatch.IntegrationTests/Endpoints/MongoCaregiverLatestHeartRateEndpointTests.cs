@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using MongoDB.Driver;
 
 namespace AnxietyWatch.IntegrationTests.Endpoints;
 
@@ -22,8 +23,7 @@ public sealed class MongoCaregiverLatestHeartRateEndpointTests(
 
     public async Task DisposeAsync()
     {
-        await factory.Services.GetRequiredService<AnxietyWatch.Infrastructure.Persistence.Mongo.MongoContext>()
-            .Database.Client.DropDatabaseAsync(factory.DatabaseName);
+        await factory.MongoClient.DropDatabaseAsync(factory.DatabaseName);
         await factory.DisposeAsync();
     }
 
@@ -74,11 +74,13 @@ internal sealed class MongoCaregiverTelemetryFactory : WebApplicationFactory<Pro
 {
     private readonly string connectionString;
     public string DatabaseName { get; }
+    public MongoClient MongoClient { get; }
 
     public MongoCaregiverTelemetryFactory(string connectionString, string databaseName)
     {
         this.connectionString = connectionString;
         DatabaseName = databaseName;
+        MongoClient = new MongoClient(connectionString);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
