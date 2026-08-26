@@ -19,6 +19,8 @@ Jobs:
 Required secrets:
 
 - `DO_DEPLOY_SSH_KEY`: restricted SSH key for the Droplet deploy command.
+- `FIREBASE_CREDENTIALS_JSON`: GitHub Environment `production` secret used only
+  as STDIN to stage the Firebase service-account file during deployment.
 
 ## Production Runtime
 
@@ -32,7 +34,23 @@ The Droplet keeps port `8080` bound to localhost only. Public traffic goes throu
 `docker-compose.prod.yml`. Caddy stores certificates in named Docker volumes and uses `restart: unless-stopped`, so
 both the API and HTTPS proxy recover automatically after a Droplet reboot or a normal redeployment.
 
-The production deployment key is restricted in `root/.ssh/authorized_keys` to `ops/anxietywatch-deploy`. It cannot open an interactive shell or forward ports. The deploy script accepts only `upload-compose`, `load-image`, and `deploy`, keeps one rollback image, and restores the previous Compose file if container health checks fail.
+The production deployment key is restricted in `root/.ssh/authorized_keys` to `ops/anxietywatch-deploy`. It cannot open an interactive shell or forward ports. The deploy script accepts only `upload-compose`, `upload-firebase-credentials`, `load-image`, and `deploy`, keeps one rollback image, and restores the previous Compose file if container health checks fail.
+
+Production notifications are fail-closed. Compose sets `Firebase__Enabled=true`,
+`Notifications__WorkerEnabled=true`, and
+`Firebase__CredentialsPath=/run/secrets/anxietywatch-firebase.json`.
+The host file `/opt/anxietywatch-backend/secrets/firebase-service-account.json`
+is mounted read-only at that container path. The restricted
+`upload-firebase-credentials` command accepts only non-empty STDIN up to 64 KiB
+and stages the file at
+`/opt/anxietywatch-backend/secrets/firebase-service-account.json.incoming`.
+Deployment promotes it under the deployment lock and restores the prior image,
+Compose file, and credential if health checks fail. There is no active
+`Firebase__CredentialsJson` setting in production.
+
+The Firebase Admin SDK can obtain the project identity from the service-account
+credential, so an explicit `Firebase:ProjectId` is not required for the file
+credential deployment.
 
 ## Human Operations Access
 

@@ -4,6 +4,10 @@ set -euo pipefail
 readonly APP_DIR=/opt/anxietywatch-backend
 readonly COMPOSE_FILE="${APP_DIR}/docker-compose.prod.yml"
 readonly PREVIOUS_COMPOSE_FILE="${APP_DIR}/docker-compose.prod.yml.previous"
+readonly SECRETS_DIR="${APP_DIR}/secrets"
+readonly FIREBASE_CREDENTIAL="${SECRETS_DIR}/firebase-service-account.json"
+readonly INCOMING_FIREBASE_CREDENTIAL="${SECRETS_DIR}/firebase-service-account.json.incoming"
+readonly PREVIOUS_FIREBASE_CREDENTIAL="${SECRETS_DIR}/firebase-service-account.json.previous"
 readonly IMAGE='ghcr.io/anxietywatch-org/anxietywatch-backend:develop'
 readonly ROLLBACK_IMAGE='ghcr.io/anxietywatch-org/anxietywatch-backend:rollback'
 
@@ -18,6 +22,21 @@ case "${command_name}" in
     docker compose --env-file "${APP_DIR}/.env" -f "${incoming_file}" config --quiet
     cp "${COMPOSE_FILE}" "${PREVIOUS_COMPOSE_FILE}"
     install -m 600 "${incoming_file}" "${COMPOSE_FILE}"
+    ;;
+
+  upload-firebase-credentials)
+    mkdir -p "${SECRETS_DIR}"
+    chmod 700 "${SECRETS_DIR}"
+    incoming_file="$(mktemp "${SECRETS_DIR}/firebase-service-account.json.incoming.XXXXXX")"
+    trap 'rm -f "${incoming_file}"' EXIT
+    umask 077
+    cat > "${incoming_file}"
+    size="$(wc -c < "${incoming_file}")"
+    if [[ "${size}" -le 0 || "${size}" -gt 65536 ]]; then
+      echo 'Firebase credential must be between 1 and 65536 bytes.' >&2
+      exit 65
+    fi
+    install -m 600 "${incoming_file}" "${INCOMING_FIREBASE_CREDENTIAL}"
     ;;
 
   load-image)
@@ -35,6 +54,27 @@ case "${command_name}" in
     }
 
     cd "${APP_DIR}"
+    had_previous_firebase_credential=0
+    if [[ -f "${FIREBASE_CREDENTIAL}" ]]; then
+      install -m 600 "${FIREBASE_CREDENTIAL}" "${PREVIOUS_FIREBASE_CREDENTIAL}"
+      had_previous_firebase_credential=1
+    else
+      rm -f "${PREVIOUS_FIREBASE_CREDENTIAL}"
+    fi
+    if [[ -f "${INCOMING_FIREBASE_CREDENTIAL}" ]]; then
+      install -m 600 "${INCOMING_FIREBASE_CREDENTIAL}" "${FIREBASE_CREDENTIAL}"
+      rm -f "${INCOMING_FIREBASE_CREDENTIAL}"
+    fi
+    if [[ ! -s "${FIREBASE_CREDENTIAL}" || ! -r "${FIREBASE_CREDENTIAL}" ]]; then
+      if [[ "${had_previous_firebase_credential}" -eq 1 ]]; then
+        install -m 600 "${PREVIOUS_FIREBASE_CREDENTIAL}" "${FIREBASE_CREDENTIAL}"
+      else
+        rm -f "${FIREBASE_CREDENTIAL}"
+      fi
+      rm -f "${INCOMING_FIREBASE_CREDENTIAL}" "${PREVIOUS_FIREBASE_CREDENTIAL}"
+      echo 'Firebase production credential is missing or unreadable.' >&2
+      exit 66
+    fi
     if ! docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans --wait --wait-timeout 180; then
       if docker image inspect "${ROLLBACK_IMAGE}" >/dev/null 2>&1; then
         docker tag "${ROLLBACK_IMAGE}" "${IMAGE}"
@@ -42,12 +82,35 @@ case "${command_name}" in
       if [[ -f "${PREVIOUS_COMPOSE_FILE}" ]]; then
         cp "${PREVIOUS_COMPOSE_FILE}" "${COMPOSE_FILE}"
       fi
+      if [[ "${had_previous_firebase_credential}" -eq 1 ]]; then
+        install -m 600 "${PREVIOUS_FIREBASE_CREDENTIAL}" "${FIREBASE_CREDENTIAL}"
+      else
+        rm -f "${FIREBASE_CREDENTIAL}"
+      fi
+      rm -f "${INCOMING_FIREBASE_CREDENTIAL}" "${PREVIOUS_FIREBASE_CREDENTIAL}"
       docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans --wait --wait-timeout 180
-      echo 'Deployment failed; the previous image and Compose file were restored.' >&2
+      echo 'Deployment failed; the previous image, Compose file and Firebase credential were restored.' >&2
       exit 1
     fi
 
-    curl --fail --silent --show-error --max-time 15 http://127.0.0.1:8080/health >/dev/null
+    if ! curl --fail --silent --show-error --max-time 15 http://127.0.0.1:8080/health >/dev/null; then
+      if docker image inspect "${ROLLBACK_IMAGE}" >/dev/null 2>&1; then
+        docker tag "${ROLLBACK_IMAGE}" "${IMAGE}"
+      fi
+      if [[ -f "${PREVIOUS_COMPOSE_FILE}" ]]; then
+        cp "${PREVIOUS_COMPOSE_FILE}" "${COMPOSE_FILE}"
+      fi
+      if [[ "${had_previous_firebase_credential}" -eq 1 ]]; then
+        install -m 600 "${PREVIOUS_FIREBASE_CREDENTIAL}" "${FIREBASE_CREDENTIAL}"
+      else
+        rm -f "${FIREBASE_CREDENTIAL}"
+      fi
+      rm -f "${INCOMING_FIREBASE_CREDENTIAL}" "${PREVIOUS_FIREBASE_CREDENTIAL}"
+      docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans --wait --wait-timeout 180
+      echo 'Deployment health verification failed; the previous image, Compose file and Firebase credential were restored.' >&2
+      exit 1
+    fi
+    rm -f "${PREVIOUS_FIREBASE_CREDENTIAL}"
     docker image prune -f >/dev/null
     ;;
 

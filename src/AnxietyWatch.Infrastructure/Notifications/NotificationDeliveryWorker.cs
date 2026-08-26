@@ -21,10 +21,18 @@ public sealed class NotificationDeliveryWorker(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        while (!stoppingToken.IsCancellationRequested)
+        logger.LogInformation("Notification delivery worker started {WorkerId}", workerId);
+        try
         {
-            var processed = await ProcessBatchAsync(20, stoppingToken);
-            if (processed == 0) await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                var processed = await ProcessBatchAsync(20, stoppingToken);
+                if (processed == 0) await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+            }
+        }
+        finally
+        {
+            logger.LogInformation("Notification delivery worker stopped {WorkerId}", workerId);
         }
     }
 
@@ -46,11 +54,13 @@ public sealed class NotificationDeliveryWorker(
     {
         if (!await links.HasAcceptedCaregiverRelationshipAsync(job.PatientId, job.CaregiverId, ct))
         {
+            logger.LogInformation("Notification job {JobId} skipped {Reason} attempt {Attempt}", job.Id, "RelationshipRevoked", job.AttemptCount);
             await outbox.MarkSkippedAsync(job.Id, "RelationshipRevoked", now, ct); return;
         }
         var device = await devices.GetByIdAsync(job.DeviceRegistrationId, ct);
         if (device is null || device.UserId != job.CaregiverId)
         {
+            logger.LogInformation("Notification job {JobId} skipped {Reason} attempt {Attempt}", job.Id, "DeviceUnavailableOrTransferred", job.AttemptCount);
             await outbox.MarkSkippedAsync(job.Id, "DeviceUnavailableOrTransferred", now, ct); return;
         }
 
@@ -60,13 +70,17 @@ public sealed class NotificationDeliveryWorker(
         switch (result.Outcome)
         {
             case PushSendOutcome.Success:
+                logger.LogInformation("Notification job {JobId} sent attempt {Attempt}", job.Id, job.AttemptCount);
                 await outbox.MarkSentAsync(job.Id, now, ct); break;
             case PushSendOutcome.PermanentInvalidRegistration:
                 await devices.TryDeleteAsync(job.CaregiverId, device.Token, ct);
+                logger.LogInformation("Notification job {JobId} skipped {Reason} attempt {Attempt}", job.Id, result.ErrorCode ?? "InvalidRegistration", job.AttemptCount);
                 await outbox.MarkSkippedAsync(job.Id, result.ErrorCode ?? "InvalidRegistration", now, ct); break;
             case PushSendOutcome.TransientFailure when job.AttemptCount < MaxAttempts:
+                logger.LogWarning("Notification job {JobId} retry {ErrorCode} attempt {Attempt}", job.Id, result.ErrorCode ?? "Transient", job.AttemptCount);
                 await outbox.MarkRetryAsync(job.Id, result.ErrorCode ?? "Transient", now.Add(RetryDelay(job.AttemptCount)), now, ct); break;
             default:
+                logger.LogError("Notification job {JobId} dead-lettered {ErrorCode} attempt {Attempt}", job.Id, result.ErrorCode ?? "PermanentFailure", job.AttemptCount);
                 await outbox.MarkDeadLetterAsync(job.Id, result.ErrorCode ?? "PermanentFailure", now, ct); break;
         }
     }

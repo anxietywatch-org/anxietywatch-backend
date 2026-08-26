@@ -4,6 +4,7 @@ using AnxietyWatch.Domain.Devices;
 using AnxietyWatch.Domain.Notifications;
 using AnxietyWatch.Domain.Tokens;
 using AnxietyWatch.Domain.Users;
+using Microsoft.Extensions.Logging;
 
 namespace AnxietyWatch.Infrastructure.Notifications;
 
@@ -12,7 +13,8 @@ public sealed class CaregiverNotificationOutbox(
     IDeviceTokenRepository devices,
     IUserRepository users,
     INotificationOutboxRepository outbox,
-    ISystemClock clock) : ICaregiverNotificationOutbox
+    ISystemClock clock,
+    ILogger<CaregiverNotificationOutbox> logger) : ICaregiverNotificationOutbox
 {
     public async Task EnsureNotificationJobsAsync(
         Guid patientId,
@@ -51,5 +53,8 @@ public sealed class CaregiverNotificationOutbox(
         }
 
         await outbox.EnsureAsync(jobs, cancellationToken);
+        logger.LogInformation(
+            "Notification jobs created {JobCount} for event {EventId} type {NotificationType}",
+            jobs.Count, eventId, type);
     }
 }

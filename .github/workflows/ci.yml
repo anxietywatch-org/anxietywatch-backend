@@ -118,6 +118,15 @@ jobs:
         run: docker pull "${REGISTRY}/${IMAGE_NAME}:develop"
       - name: Upload the validated production Compose file
         run: ssh root@161.35.110.44 upload-compose < docker-compose.prod.yml
+      - name: Stage Firebase production credentials
+        env:
+          FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
+        run: |
+          if [ -z "$FIREBASE_CREDENTIALS_JSON" ]; then
+            echo "FIREBASE_CREDENTIALS_JSON is required for production deployment." >&2
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_CREDENTIALS_JSON" | ssh root@161.35.110.44 upload-firebase-credentials
       - name: Stream the image to the Droplet
         run: docker save "${REGISTRY}/${IMAGE_NAME}:develop" | ssh root@161.35.110.44 load-image
       - name: Run the restricted deployment command

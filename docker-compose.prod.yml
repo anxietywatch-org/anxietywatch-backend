@@ -11,11 +11,9 @@ services:
       Mongo__ConnectionString: ${MONGO_ATLAS_CONNECTION_STRING}
       Mongo__DatabaseName: anxietywatch
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
-      Firebase__Enabled: ${FIREBASE_ENABLED:-false}
-      Notifications__WorkerEnabled: ${NOTIFICATIONS_WORKER_ENABLED:-false}
-      Firebase__CredentialsPath: ${FIREBASE_CREDENTIALS_PATH:-}
-      Firebase__CredentialsJson: ${FIREBASE_CREDENTIALS_JSON:-}
-      Firebase__ProjectId: ${FIREBASE_PROJECT_ID:-}
+      Firebase__Enabled: "true"
+      Notifications__WorkerEnabled: "true"
+      Firebase__CredentialsPath: /run/secrets/anxietywatch-firebase.json
       Email__Provider: ${EMAIL_PROVIDER:-Resend}
       Email__Resend__ApiKey: ${RESEND_API_KEY:-}
       Email__From: ${EMAIL_FROM:-AnxietyWatch <no-reply@mail.mangoon.xyz>}
@@ -27,6 +25,8 @@ services:
       Ml__Inference__TelemetryLookbackSeconds: ${ML_INFERENCE_TELEMETRY_LOOKBACK_SECONDS:-60}
     ports:
       - "127.0.0.1:8080:8080"
+    volumes:
+      - /opt/anxietywatch-backend/secrets/firebase-service-account.json:/run/secrets/anxietywatch-firebase.json:ro
     networks:
       - anxietywatch_network
     healthcheck:
