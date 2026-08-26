@@ -81,8 +81,8 @@ public static class DependencyInjection
         {
             services.AddSingleton<MongoContext>();
             services.AddSingleton<IPlanRepository, MongoPlanRepository>();
-             services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IWearableSyncRepository, MongoWearableSyncRepository>();
              services.AddSingleton<MongoWearableSyncRepository>();
+             services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IWearableSyncRepository>(serviceProvider => serviceProvider.GetRequiredService<MongoWearableSyncRepository>());
              services.AddSingleton<AnxietyWatch.Application.Features.Caregivers.IPatientHeartRateRepository>(serviceProvider => serviceProvider.GetRequiredService<MongoWearableSyncRepository>());
              services.AddSingleton<AnxietyWatch.Application.Features.Wearables.IEventInferenceRepository, MongoEventInferenceRepository>();
              services.AddSingleton<AnxietyWatch.Application.Features.Caregivers.IPatientEventRepository, MongoPatientEventRepository>();
