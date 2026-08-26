@@ -62,8 +62,7 @@ case "${command_name}" in
       rm -f "${PREVIOUS_FIREBASE_CREDENTIAL}"
     fi
     if [[ -f "${INCOMING_FIREBASE_CREDENTIAL}" ]]; then
-      install -m 600 "${INCOMING_FIREBASE_CREDENTIAL}" "${FIREBASE_CREDENTIAL}"
-      rm -f "${INCOMING_FIREBASE_CREDENTIAL}"
+      mv -f "${INCOMING_FIREBASE_CREDENTIAL}" "${FIREBASE_CREDENTIAL}"
     fi
     if [[ ! -s "${FIREBASE_CREDENTIAL}" || ! -r "${FIREBASE_CREDENTIAL}" ]]; then
       if [[ "${had_previous_firebase_credential}" -eq 1 ]]; then
