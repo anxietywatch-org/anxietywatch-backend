@@ -346,7 +346,35 @@ FCM no se incluyen en ninguna respuesta pública.
 Para cerrar sesión o retirar el dispositivo, el cliente puede llamar
 `POST /api/devices/unregister` con su token actual antes de desecharlo.
 
-Cuando un paciente activa `POST /api/v1/sos/trigger`, el backend detecta a los cuidadores vinculados mediante tokens aceptados y despacha una alerta a sus dispositivos registrados. Sin `Push:WebhookUrl` configurado, el envío es un log (no-op) y nunca altera la aceptación del SOS.
+Las alertas se guardan primero en un outbox durable, una por dispositivo, y un
+worker las entrega por Firebase. Solo reciben alertas los cuidadores con una
+relación persistida `Accepted` y rol `family_member`; la relación y la propiedad
+del dispositivo se vuelven a validar inmediatamente antes del envío.
+
+| Evento | Push |
+| --- | --- |
+| SOS manual | Sí |
+| `SUPPORT_REQUESTED` | Sí |
+| `USER_OK` | No |
+| `ACTIVITY_CONFIRMED` | No |
+| Evento sospechoso antes de respuesta | No |
+| Inferencia ML por sí sola | No |
+
+`SUPPORT_REQUESTED` no es SOS. El payload `data` contiene exactamente
+`eventId`, `patientName` y `alertMessage`; agrega `emergencyPhone` solo cuando
+existe en el perfil persistido y `location` solo cuando existe una fuente
+persistida fiable (actualmente se omite). Nunca contiene telemetría, resultados
+ML, JWT ni tokens FCM.
+
+Firebase está deshabilitado por defecto. El entorno autorizado debe configurar
+`Firebase__Enabled=true`, `Notifications__WorkerEnabled=true` y exactamente una
+de `Firebase__CredentialsPath` (ruta a un secreto montado fuera de la imagen) o
+`Firebase__CredentialsJson` (JSON suministrado por el gestor de secretos).
+`Firebase__ProjectId` es opcional. Si Firebase se habilita sin una fuente de
+credenciales válida, el proceso falla claramente al arrancar. CI y desarrollo
+no requieren credenciales. Tras cambiar estos valores se debe reiniciar o
+redesplegar el API; nunca se debe guardar la Service Account en Git, imágenes o
+logs.
 
 ### Contenido
 

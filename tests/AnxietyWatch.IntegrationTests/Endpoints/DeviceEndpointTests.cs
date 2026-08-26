@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AnxietyWatch.Domain.Devices;
+using AnxietyWatch.Domain.Notifications;
 using AnxietyWatch.IntegrationTests.Infrastructure;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -133,7 +134,7 @@ public sealed class DeviceEndpointTests(CustomWebApplicationFactory factory)
     }
 
     [Fact]
-    public async Task SosTrigger_ShouldDispatchAlertToLinkedCaregiverDevice()
+    public async Task SosTrigger_ShouldQueueAlertForLinkedCaregiverDevice()
     {
         using var owner = factory.CreateClient();
         var registration = await owner.PostAsJsonAsync("/api/auth/register", new
@@ -180,8 +181,10 @@ public sealed class DeviceEndpointTests(CustomWebApplicationFactory factory)
         });
         sos.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
-        factory.PushNotifier.Messages.Should().ContainSingle();
-        factory.PushNotifier.Messages.Single().DeviceTokens.Should().Contain(caregiverFcmToken);
+        using var scope = factory.Services.CreateScope();
+        var submitted = await sos.Content.ReadFromJsonAsync<SubmissionResponse>();
+        var jobs = await scope.ServiceProvider.GetRequiredService<INotificationOutboxRepository>().GetAllAsync();
+        jobs.Should().ContainSingle(job => job.EventId == submitted!.EventId);
     }
 
     private async Task<(HttpClient Client, Guid UserId)> CreateAuthenticatedClientAsync()
@@ -215,6 +218,7 @@ public sealed class DeviceEndpointTests(CustomWebApplicationFactory factory)
     }
 
     private sealed record AuthResponse(string Token);
+    private sealed record SubmissionResponse(Guid EventId);
     private sealed record AuthResponseWithUser(string Token, UserResponse User);
     private sealed record DeviceResponse(
         string Id,

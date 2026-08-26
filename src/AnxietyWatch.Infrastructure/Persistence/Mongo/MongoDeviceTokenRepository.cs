@@ -24,6 +24,13 @@ public sealed class MongoDeviceTokenRepository(MongoContext context) : IDeviceTo
         return document is null ? null : Map(document);
     }
 
+    public async Task<DeviceToken?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var document = await Collection.Find(Builders<BsonDocument>.Filter.Eq("_id", id.ToString()))
+            .FirstOrDefaultAsync(cancellationToken);
+        return document is null ? null : Map(document);
+    }
+
     public async Task<DeviceToken> UpsertAsync(DeviceToken device, CancellationToken cancellationToken = default)
     {
         var filter = Builders<BsonDocument>.Filter.Eq("token", device.Token);
