@@ -10,8 +10,8 @@ namespace AnxietyWatch.Application.Features.Devices;
 public sealed record DeviceResponse(
     string Id,
     string Platform,
-    string Token,
-    DateTimeOffset RegisteredAt);
+    DateTimeOffset RegisteredAt,
+    DateTimeOffset UpdatedAt);
 
 public sealed record RegisterDeviceCommand(string Platform, string Token) : IRequest<DeviceResponse>;
 
@@ -45,15 +45,16 @@ public sealed class RegisterDeviceCommandHandler(
     public async Task<DeviceResponse> Handle(RegisterDeviceCommand command, CancellationToken cancellationToken)
     {
         RequireAuthenticatedUser(currentUser);
-        var existing = await devices.GetByTokenAsync(command.Token, cancellationToken);
+        var now = clock.UtcNow;
         var device = new DeviceToken(
-            existing?.Id ?? Guid.NewGuid(),
+            Guid.NewGuid(),
             currentUser.UserId,
             command.Platform.ToLowerInvariant(),
             command.Token,
-            existing?.CreatedAt ?? clock.UtcNow);
-        await devices.TryUpsertAsync(device, cancellationToken);
-        return Map(device);
+            now,
+            now);
+        var persisted = await devices.UpsertAsync(device, cancellationToken);
+        return Map(persisted);
     }
 
     internal static void RequireAuthenticatedUser(ICurrentUser currentUser)
@@ -65,7 +66,7 @@ public sealed class RegisterDeviceCommandHandler(
     }
 
     internal static DeviceResponse Map(DeviceToken device) =>
-        new(device.Id.ToString(), device.Platform, device.Token, device.CreatedAt);
+        new(device.Id.ToString(), device.Platform, device.CreatedAt, device.UpdatedAt);
 }
 
 public sealed class UnregisterDeviceCommandHandler(ICurrentUser currentUser, IDeviceTokenRepository devices)

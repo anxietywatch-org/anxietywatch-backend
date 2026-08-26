@@ -4,14 +4,20 @@ namespace AnxietyWatch.Domain.Devices;
 
 public sealed class DeviceToken : Entity
 {
-    public DeviceToken(Guid id, Guid userId, string platform, string token, DateTimeOffset createdAt)
+    public DeviceToken(
+        Guid id,
+        Guid userId,
+        string platform,
+        string token,
+        DateTimeOffset createdAt,
+        DateTimeOffset? updatedAt = null)
         : base(id)
     {
         UserId = userId;
         Platform = platform;
         Token = token;
         CreatedAt = createdAt;
-        UpdatedAt = createdAt;
+        UpdatedAt = updatedAt ?? createdAt;
     }
 
     public static DeviceToken Restore(
