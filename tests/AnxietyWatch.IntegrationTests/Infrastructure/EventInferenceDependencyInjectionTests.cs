@@ -1,4 +1,5 @@
 using AnxietyWatch.Application.Abstractions.MlInference;
+using AnxietyWatch.Application.Features.Caregivers;
 using AnxietyWatch.Application.Features.Wearables;
 using AnxietyWatch.Infrastructure;
 using AnxietyWatch.Infrastructure.Persistence;
@@ -82,5 +83,18 @@ public sealed class EventInferenceDependencyInjectionTests : IClassFixture<Mongo
         var repository = provider.GetRequiredService<IEventInferenceRepository>();
 
         repository.Should().BeOfType<MongoEventInferenceRepository>();
+    }
+
+    [Fact]
+    public void MongoWearableRepositories_ResolveTheSameConcreteSingleton()
+    {
+        using var provider = BuildProvider("Mongo", mongoFixture.Container.GetConnectionString());
+
+        var wearable = provider.GetRequiredService<IWearableSyncRepository>();
+        var heartRate = provider.GetRequiredService<IPatientHeartRateRepository>();
+        var concrete = provider.GetRequiredService<MongoWearableSyncRepository>();
+
+        wearable.Should().BeSameAs(concrete);
+        heartRate.Should().BeSameAs(concrete);
     }
 }
