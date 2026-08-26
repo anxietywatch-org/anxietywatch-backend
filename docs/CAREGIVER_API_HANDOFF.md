@@ -164,6 +164,41 @@ Inference, reasons, raw telemetry, identifiers, and ML fields are excluded.
 Common errors: `400` invalid limit, `401` unauthenticated, `403` not
 authorized.
 
+## Patient Self Event History
+
+`GET /api/events?limit=50`
+
+Authentication: a patient Bearer JWT is required. The API resolves the patient
+exclusively from `ICurrentUser.UserId`; clients must not send a `patientId` or
+`userId`. `limit` accepts `1..100` and defaults to `50`.
+
+Success: `200 OK` with the authenticated patient's globally bounded history.
+An empty history is `200 OK` with `[]`. Results are ordered by `occurredAt DESC`,
+then `eventId DESC` for deterministic ties.
+
+Each item contains exactly `eventId`, `type`, `occurredAt`, and `status`.
+`SOS` represents an actual manual SOS. `SUSPECTED_EVENT` represents the factual
+lifecycle statuses `DETECTED`, `ACTIVITY_CONFIRMED`, `USER_OK`, and
+`SUPPORT_REQUESTED`. `SUPPORT_REQUESTED` is not SOS. `ACTIVITY_CONFIRMED`
+records the activity decision; it is not clinical confirmation of anxiety.
+`USER_OK` records the patient's response; it is not a diagnosis. An inference
+alone does not create a history row.
+
+The response excludes raw telemetry, BPM, IBI, movement, temperature, device
+and session identifiers, patient and user identifiers, ML scores or
+probabilities, features, model metadata, FCM data, and authentication data.
+
+For client charts, aggregate factual event counts by date or time. Do not
+invent a clinical score, ML score, probability, or anxiety score from this
+history.
+
+This patient-self route is distinct from
+`GET /api/caregiver/patients/{patientId}/events`: the caregiver route requires a
+caregiver JWT and a persisted, accepted `family_member` relationship with that
+patient.
+
+Common errors: `400` invalid limit, `401` unauthenticated.
+
 ## Latest Patient Telemetry
 
 Canonical: `GET /api/caregiver/patients/{patientId}/telemetry/latest`
