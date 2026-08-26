@@ -29,12 +29,21 @@ public sealed class InMemoryDeviceTokenRepository : IDeviceTokenRepository
         }
     }
 
-    public Task<bool> TryUpsertAsync(DeviceToken device, CancellationToken cancellationToken = default)
+    public Task<DeviceToken> UpsertAsync(DeviceToken device, CancellationToken cancellationToken = default)
     {
         lock (gate)
         {
-            byToken[device.Token] = Clone(device);
-            return Task.FromResult(true);
+            var persisted = byToken.TryGetValue(device.Token, out var existing)
+                ? DeviceToken.Restore(
+                    existing.Id,
+                    device.UserId,
+                    device.Platform,
+                    device.Token,
+                    existing.CreatedAt,
+                    device.UpdatedAt)
+                : Clone(device);
+            byToken[device.Token] = persisted;
+            return Task.FromResult(Clone(persisted));
         }
     }
 

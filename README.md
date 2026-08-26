@@ -304,13 +304,31 @@ Responde `{ "anxietyThreshold": 70, "pushNotifications": true, "privateMode": fa
 
 #### POST /api/devices/register — 200
 
-Registra el token de notificaciones push del dispositivo (p. ej. token FCM) en la cuenta autenticada. Idempotente por token.
+Registra el token FCM en la cuenta identificada exclusivamente por el JWT Bearer.
+El cliente no envía `userId`. Debe llamarse después de que exista una sesión
+autenticada y cada vez que FCM entregue un token nuevo o actualizado.
 
 ```json
 { "platform": "android", "token": "fcm-token-del-dispositivo" }
 ```
 
-`platform`: `android` | `ios` | `web`. Responde `{ "id": "...", "platform": "...", "token": "...", "registeredAt": "..." }`.
+`platform`: `android` | `ios` | `web`.
+
+Responde sin exponer el token:
+
+```json
+{
+  "id": "guid",
+  "platform": "android",
+  "registeredAt": "2026-08-25T20:00:00Z",
+  "updatedAt": "2026-08-25T20:00:00Z"
+}
+```
+
+Registrar el mismo token nuevamente es idempotente y actualiza plataforma,
+propietario y `updatedAt`. Si una nueva cuenta registra un token ya conocido,
+la propiedad se transfiere atómicamente a esa cuenta. Una cuenta puede mantener
+varios tokens; sin `installationId`, la rotación se registra como un token nuevo.
 
 #### POST /api/devices/unregister — 200
 
@@ -322,7 +340,11 @@ Responde `{ "success": true }`.
 
 #### GET /api/devices — 200
 
-Lista los tokens registrados de la cuenta autenticada.
+Lista metadatos de los destinos registrados de la cuenta autenticada. Los tokens
+FCM no se incluyen en ninguna respuesta pública.
+
+Para cerrar sesión o retirar el dispositivo, el cliente puede llamar
+`POST /api/devices/unregister` con su token actual antes de desecharlo.
 
 Cuando un paciente activa `POST /api/v1/sos/trigger`, el backend detecta a los cuidadores vinculados mediante tokens aceptados y despacha una alerta a sus dispositivos registrados. Sin `Push:WebhookUrl` configurado, el envío es un log (no-op) y nunca altera la aceptación del SOS.
 

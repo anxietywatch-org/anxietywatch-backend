@@ -24,15 +24,51 @@ public sealed class MongoDeviceTokenRepository(MongoContext context) : IDeviceTo
         return document is null ? null : Map(document);
     }
 
-    public async Task<bool> TryUpsertAsync(DeviceToken device, CancellationToken cancellationToken = default)
+    public async Task<DeviceToken> UpsertAsync(DeviceToken device, CancellationToken cancellationToken = default)
     {
         var filter = Builders<BsonDocument>.Filter.Eq("token", device.Token);
-        await Collection.ReplaceOneAsync(
-            filter,
-            Map(device),
-            new ReplaceOptions { IsUpsert = true },
-            cancellationToken);
-        return true;
+        var update = Builders<BsonDocument>.Update
+            .Set("userId", device.UserId.ToString())
+            .Set("platform", device.Platform)
+            .Set("updatedAt", Date(device.UpdatedAt))
+            .SetOnInsert("_id", device.Id.ToString())
+            .SetOnInsert("token", device.Token)
+            .SetOnInsert("createdAt", Date(device.CreatedAt));
+
+        BsonDocument? document;
+        try
+        {
+            document = await Collection.FindOneAndUpdateAsync(
+                filter,
+                update,
+                new FindOneAndUpdateOptions<BsonDocument>
+                {
+                    IsUpsert = true,
+                    ReturnDocument = ReturnDocument.After
+                },
+                cancellationToken);
+        }
+        catch (MongoWriteException exception) when (
+            exception.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+        {
+            // A concurrent first registration won the unique-token insert.
+            // Retry as an update so the token still has exactly one final owner.
+            document = await Collection.FindOneAndUpdateAsync(
+                filter,
+                update,
+                new FindOneAndUpdateOptions<BsonDocument> { ReturnDocument = ReturnDocument.After },
+                cancellationToken);
+        }
+        catch (MongoCommandException exception) when (exception.Code == 11000)
+        {
+            document = await Collection.FindOneAndUpdateAsync(
+                filter,
+                update,
+                new FindOneAndUpdateOptions<BsonDocument> { ReturnDocument = ReturnDocument.After },
+                cancellationToken);
+        }
+
+        return Map(document ?? throw new InvalidOperationException("The device registration could not be persisted."));
     }
 
     public async Task<bool> TryDeleteAsync(Guid userId, string token, CancellationToken cancellationToken = default)
@@ -43,16 +79,6 @@ public sealed class MongoDeviceTokenRepository(MongoContext context) : IDeviceTo
         var result = await Collection.DeleteOneAsync(filter, cancellationToken);
         return result.DeletedCount == 1;
     }
-
-    private static BsonDocument Map(DeviceToken device) => new()
-    {
-        ["_id"] = device.Id.ToString(),
-        ["userId"] = device.UserId.ToString(),
-        ["platform"] = device.Platform,
-        ["token"] = device.Token,
-        ["createdAt"] = Date(device.CreatedAt),
-        ["updatedAt"] = Date(device.UpdatedAt)
-    };
 
     private static DeviceToken Map(BsonDocument document) => DeviceToken.Restore(
         Guid.Parse(document["_id"].AsString),
