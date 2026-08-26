@@ -55,11 +55,18 @@ public static class DependencyInjection
             services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IEmailSender, LoggingEmailSender>();
         }
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Time.ISystemClock, SystemClock>();
-        services.AddHttpClient<AnxietyWatch.Application.Abstractions.Notifications.IPushNotifier, PushNotifier>(client =>
+        services.AddSingleton<AnxietyWatch.Application.Abstractions.Notifications.ICaregiverNotificationOutbox, CaregiverNotificationOutbox>();
+        if (configuration.GetValue<bool>("Firebase:Enabled"))
         {
-            client.Timeout = TimeSpan.FromSeconds(10);
-        });
-        services.AddSingleton<AnxietyWatch.Application.Abstractions.Notifications.ICaregiverAlertDispatcher, CaregiverAlertDispatcher>();
+            var credentialsPath = configuration["Firebase:CredentialsPath"];
+            var credentialsJson = configuration["Firebase:CredentialsJson"];
+            if (string.IsNullOrWhiteSpace(credentialsPath) == string.IsNullOrWhiteSpace(credentialsJson))
+                throw new InvalidOperationException(
+                    "Firebase requires exactly one credential source: Firebase:CredentialsPath or Firebase:CredentialsJson.");
+            services.AddSingleton<AnxietyWatch.Application.Abstractions.Notifications.IPushNotificationSender, FirebasePushNotificationSender>();
+        }
+        else
+            services.AddSingleton<AnxietyWatch.Application.Abstractions.Notifications.IPushNotificationSender, DisabledPushNotificationSender>();
 
         services.AddHttpClient<AnxietyWatch.Application.Abstractions.MlInference.IMlInferenceClient, MlInferenceHttpClient>(client =>
         {
@@ -84,6 +91,7 @@ public static class DependencyInjection
             services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, MongoEpisodeRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, MongoLinkTokenRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Devices.IDeviceTokenRepository, MongoDeviceTokenRepository>();
+            services.AddSingleton<AnxietyWatch.Domain.Notifications.INotificationOutboxRepository, MongoNotificationOutboxRepository>();
             services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IRevokedTokenStore, MongoRevokedTokenStore>();
             services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordResetTokenStore, MongoPasswordResetTokenStore>();
         }
@@ -101,8 +109,16 @@ public static class DependencyInjection
             services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, InMemoryEpisodeRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, InMemoryLinkTokenRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Devices.IDeviceTokenRepository, InMemoryDeviceTokenRepository>();
+            services.AddSingleton<AnxietyWatch.Domain.Notifications.INotificationOutboxRepository, InMemoryNotificationOutboxRepository>();
             services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IRevokedTokenStore, InMemoryRevokedTokenStore>();
             services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IPasswordResetTokenStore, InMemoryPasswordResetTokenStore>();
+        }
+
+        if (configuration.GetValue<bool>("Notifications:WorkerEnabled"))
+        {
+            if (!configuration.GetValue<bool>("Firebase:Enabled"))
+                throw new InvalidOperationException("Notifications worker requires Firebase:Enabled=true.");
+            services.AddHostedService<NotificationDeliveryWorker>();
         }
 
         return services;

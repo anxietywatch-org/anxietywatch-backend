@@ -4,6 +4,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="FirebaseAdmin" Version="3.6.0" />
     <ProjectReference Include="..\AnxietyWatch.Application\AnxietyWatch.Application.csproj" />
     <PackageReference Include="MongoDB.Driver" Version="3.10.0" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.2.1" />

@@ -29,6 +29,15 @@ public sealed class InMemoryDeviceTokenRepository : IDeviceTokenRepository
         }
     }
 
+    public Task<DeviceToken?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            var device = byToken.Values.FirstOrDefault(candidate => candidate.Id == id);
+            return Task.FromResult(device is null ? null : Clone(device));
+        }
+    }
+
     public Task<DeviceToken> UpsertAsync(DeviceToken device, CancellationToken cancellationToken = default)
     {
         lock (gate)

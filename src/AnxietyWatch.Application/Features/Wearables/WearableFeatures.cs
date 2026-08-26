@@ -3,6 +3,7 @@ using AnxietyWatch.Application.Abstractions.Security;
 using AnxietyWatch.Application.Common;
 using FluentValidation;
 using MediatR;
+using AnxietyWatch.Domain.Notifications;
 
 namespace AnxietyWatch.Application.Features.Wearables;
 
@@ -187,17 +188,15 @@ public sealed class TriggerSosCommandValidator : AbstractValidator<TriggerSosCom
 public sealed class TriggerSosCommandHandler(
     ICurrentUser currentUser,
     IWearableSyncRepository repository,
-    ICaregiverAlertDispatcher alertDispatcher)
+    ICaregiverNotificationOutbox notificationOutbox)
     : IRequestHandler<TriggerSosCommand, SubmissionResponse>
 {
     public async Task<SubmissionResponse> Handle(TriggerSosCommand command, CancellationToken cancellationToken)
     {
         var userId = SubmitTelemetryBatchCommandHandler.RequireMatchingUser(currentUser, command.Trigger.UserId);
         var accepted = await repository.TryStoreSosAsync(userId, command.Trigger, cancellationToken);
-        if (accepted)
-        {
-            await alertDispatcher.DispatchSosAlertAsync(userId, command.Trigger.EventId, cancellationToken);
-        }
+        await notificationOutbox.EnsureNotificationJobsAsync(
+            userId, command.Trigger.EventId, CaregiverNotificationType.Sos, cancellationToken);
 
         return new SubmissionResponse(command.Trigger.EventId, accepted, !accepted);
     }
@@ -336,7 +335,8 @@ public sealed class SubmitEventDecisionCommandValidator : AbstractValidator<Subm
 
 public sealed class SubmitEventDecisionCommandHandler(
     ICurrentUser currentUser,
-    IWearableSyncRepository repository)
+    IWearableSyncRepository repository,
+    ICaregiverNotificationOutbox notificationOutbox)
     : IRequestHandler<SubmitEventDecisionCommand, SubmissionResponse>
 {
     public async Task<SubmissionResponse> Handle(SubmitEventDecisionCommand command, CancellationToken cancellationToken)
@@ -348,6 +348,11 @@ public sealed class SubmitEventDecisionCommandHandler(
             userId,
             command.Decision,
             cancellationToken);
+        if (string.Equals(command.Decision.Response, "SUPPORT_REQUESTED", StringComparison.OrdinalIgnoreCase))
+        {
+            await notificationOutbox.EnsureNotificationJobsAsync(
+                userId, command.Decision.EventId, CaregiverNotificationType.SupportRequested, cancellationToken);
+        }
         return new SubmissionResponse(command.Decision.EventId, accepted, !accepted);
     }
 }
