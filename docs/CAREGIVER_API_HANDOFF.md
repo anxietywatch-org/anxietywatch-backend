@@ -98,6 +98,30 @@ Success: `200 OK` with only accepted `family_member` relationships:
 Common errors: `401` unauthenticated. Unlinked, pending, revoked, self, and
 patient-role relationships are not returned.
 
+## Link an Additional Patient
+
+`POST /api/caregiver/patients/link`
+
+Authentication: an existing `family_member` caregiver session is required.
+The caregiver identity comes exclusively from the active JWT.
+
+Request:
+
+```json
+{
+  "code": "AW-EXAMPLE"
+}
+```
+
+Success: `200 OK` with `patientId`, `fullName`, `avatarUrl`, `role`, and
+`linkedAt`. The endpoint accepts only a pending, unexpired `family_member`
+invitation belonging to a patient account. It does not create a user, replace
+the JWT, or alter any existing patient relationship.
+
+Common errors: `400` invalid request, `401` unauthenticated, `403` the current
+account is not a caregiver, `404` unknown code/invitation owner missing, `409`
+ineligible, unavailable, or already-used code, `410` expired code.
+
 ## Patient Detail
 
 `GET /api/caregiver/patients/{patientId}`
@@ -140,11 +164,15 @@ Inference, reasons, raw telemetry, identifiers, and ML fields are excluded.
 Common errors: `400` invalid limit, `401` unauthenticated, `403` not
 authorized.
 
-## Latest Patient Heart Rate
+## Latest Patient Telemetry
 
+Canonical: `GET /api/caregiver/patients/{patientId}/telemetry/latest`
+
+Temporary compatibility alias:
 `GET /api/caregiver/patients/{patientId}/heart-rate/latest`
 
 Authentication: required. Caregiver authorization runs before telemetry access.
+Both routes execute the same handler and return the same DTO and status semantics.
 
 Success: `200 OK`:
 

@@ -38,6 +38,23 @@ public sealed class CaregiverLatestHeartRateEndpointTests(CustomWebApplicationFa
     }
 
     [Fact]
+    public async Task CanonicalAndCompatibilityRoutesUseTheSameResponseContract()
+    {
+        var (patient, patientId) = await CreateUserAsync("Patient");
+        var (caregiver, caregiverId) = await CreateUserAsync("Caregiver");
+        await AddAcceptedRelationshipAsync(patientId, caregiverId);
+        var measuredAt = DateTimeOffset.UtcNow.AddSeconds(-5);
+        (await patient.PostAsJsonAsync("/api/v1/telemetry/batch", Batch(patientId, measuredAt, 91)))
+            .StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        var canonical = await caregiver.GetAsync($"/api/caregiver/patients/{patientId}/telemetry/latest");
+        var compatibility = await caregiver.GetAsync($"/api/caregiver/patients/{patientId}/heart-rate/latest");
+
+        canonical.StatusCode.Should().Be(compatibility.StatusCode);
+        (await canonical.Content.ReadAsStringAsync()).Should().Be(await compatibility.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task UnauthorizedCaregiverAndEmptyPatientAreHandledSafely()
     {
         using var anonymous = factory.CreateClient();
