@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\AnxietyWatch.Application\AnxietyWatch.Application.csproj" />
+    <ProjectReference Include="..\..\src\AnxietyWatch.Infrastructure\AnxietyWatch.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\AnxietyWatch.Domain\AnxietyWatch.Domain.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />

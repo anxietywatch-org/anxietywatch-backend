@@ -11,6 +11,14 @@ public sealed class FirebasePushNotificationSender : IPushNotificationSender
 {
     private readonly FirebaseMessaging messaging;
 
+    internal static Message BuildMessage(string registrationToken, NotificationPayload payload) => new()
+    {
+#pragma warning disable CS0618 // FCM registration-token targeting remains the public device contract during FID migration.
+        Token = registrationToken,
+#pragma warning restore CS0618
+        Data = payload.ToData().ToDictionary(pair => pair.Key, pair => pair.Value)
+    };
+
     public FirebasePushNotificationSender(IConfiguration configuration)
     {
         if (!configuration.GetValue<bool>("Firebase:Enabled"))
@@ -34,13 +42,7 @@ public sealed class FirebasePushNotificationSender : IPushNotificationSender
     {
         try
         {
-            await messaging.SendAsync(new Message
-            {
-#pragma warning disable CS0618 // FCM registration-token targeting remains the public device contract during FID migration.
-                Token = registrationToken,
-#pragma warning restore CS0618
-                Data = payload.ToData().ToDictionary(pair => pair.Key, pair => pair.Value)
-            }, cancellationToken);
+            await messaging.SendAsync(BuildMessage(registrationToken, payload), cancellationToken);
             return new(PushSendOutcome.Success);
         }
         catch (FirebaseMessagingException e) when (e.MessagingErrorCode is MessagingErrorCode.Unregistered or MessagingErrorCode.SenderIdMismatch)
