@@ -17,7 +17,7 @@ public sealed class MongoCaregiverLatestHeartRateEndpointTests(
     MongoDbContainerFixture fixture) : IClassFixture<MongoDbContainerFixture>, IAsyncLifetime
 {
     private readonly MongoCaregiverTelemetryFactory factory =
-        new(fixture.Container.GetConnectionString(), $"anxietywatch_caregiver_telemetry_{Guid.NewGuid():N}");
+        new(fixture.Container.GetConnectionString(), $"aw_cg_hr_{Guid.NewGuid():N}");
 
     public Task InitializeAsync() => Task.CompletedTask;
 
