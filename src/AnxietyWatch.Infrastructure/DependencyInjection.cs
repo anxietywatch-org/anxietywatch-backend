@@ -1,6 +1,7 @@
 using System.Net.Http;
 using AnxietyWatch.Domain.Plans;
 using AnxietyWatch.Domain.Users;
+using AnxietyWatch.Domain.Caregivers;
 using AnxietyWatch.Application.Features.Support;
 using AnxietyWatch.Infrastructure.Caching;
 using AnxietyWatch.Infrastructure.MlInference;
@@ -91,6 +92,7 @@ public static class DependencyInjection
             services.AddSingleton<IUserRepository, MongoUserRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, MongoEpisodeRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, MongoLinkTokenRepository>();
+            services.AddSingleton<ICaregiverRelationshipAuditRepository, MongoCaregiverRelationshipAuditRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Devices.IDeviceTokenRepository, MongoDeviceTokenRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Notifications.INotificationOutboxRepository, MongoNotificationOutboxRepository>();
             services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IRevokedTokenStore, MongoRevokedTokenStore>();
@@ -109,6 +111,7 @@ public static class DependencyInjection
             services.AddSingleton<IUserRepository, InMemoryUserRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, InMemoryEpisodeRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, InMemoryLinkTokenRepository>();
+            services.AddSingleton<ICaregiverRelationshipAuditRepository, InMemoryCaregiverRelationshipAuditRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Devices.IDeviceTokenRepository, InMemoryDeviceTokenRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Notifications.INotificationOutboxRepository, InMemoryNotificationOutboxRepository>();
             services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IRevokedTokenStore, InMemoryRevokedTokenStore>();

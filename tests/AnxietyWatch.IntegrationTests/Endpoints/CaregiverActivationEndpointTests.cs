@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using AnxietyWatch.Domain.Caregivers;
+using Microsoft.Extensions.DependencyInjection;
 using AnxietyWatch.IntegrationTests.Infrastructure;
 using FluentAssertions;
 
@@ -44,6 +46,15 @@ public sealed class CaregiverActivationEndpointTests(CustomWebApplicationFactory
         activated!.User.Id.Should().Be(caregiverId);
         activated.User.Email.Should().Be("caregiver@example.test");
         activated.User.EmailVerified.Should().BeFalse();
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var audit = await scope.ServiceProvider
+                .GetRequiredService<ICaregiverRelationshipAuditRepository>()
+                .GetAsync(caregiverId: Guid.Parse(caregiverId));
+            audit.Should().ContainSingle(item =>
+                item.Action == CaregiverRelationshipAuditAction.AcceptedInitial);
+        }
 
         using var relogin = factory.CreateClient();
         var login = await relogin.PostAsJsonAsync("/api/auth/login", new

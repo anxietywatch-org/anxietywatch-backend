@@ -3,6 +3,7 @@ using AnxietyWatch.Application.Common;
 using AnxietyWatch.Domain.Tokens;
 using AnxietyWatch.Domain.Users;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace AnxietyWatch.Application.Features.Caregivers;
 
@@ -18,7 +19,8 @@ public sealed record GetLinkedPatientsQuery : IRequest<IReadOnlyList<LinkedPatie
 public sealed class GetLinkedPatientsQueryHandler(
     ICurrentUser currentUser,
     ILinkTokenRepository tokens,
-    IUserRepository users)
+    IUserRepository users,
+    ILogger<GetLinkedPatientsQueryHandler> logger)
     : IRequestHandler<GetLinkedPatientsQuery, IReadOnlyList<LinkedPatientResponse>>
 {
     public async Task<IReadOnlyList<LinkedPatientResponse>> Handle(
@@ -48,6 +50,9 @@ public sealed class GetLinkedPatientsQueryHandler(
                 relationship.LinkedAt));
         }
 
+        logger.LogDebug(
+            "Caregiver patient relationship list for caregiver {CaregiverId} returned {RelationshipCount} relationships.",
+            currentUser.UserId, result.Count);
         return result;
     }
 }

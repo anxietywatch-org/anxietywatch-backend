@@ -4,8 +4,10 @@ using AnxietyWatch.Application.Common;
 using AnxietyWatch.Application.Features.Authentication;
 using AnxietyWatch.Domain.Tokens;
 using AnxietyWatch.Domain.Users;
+using AnxietyWatch.Domain.Caregivers;
 using FluentValidation;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace AnxietyWatch.Application.Features.Tokens;
 
@@ -30,7 +32,9 @@ public sealed class TokenRedeemCommandHandler(
     ILinkTokenRepository tokens,
     IUserRepository users,
     IJwtTokenService jwtTokenService,
-    ISystemClock clock)
+    ISystemClock clock,
+    ICaregiverRelationshipAuditRepository audit,
+    ILogger<TokenRedeemCommandHandler> logger)
     : IRequestHandler<TokenRedeemCommand, TokenRedeemResponse>
 {
     public async Task<TokenRedeemResponse> Handle(
@@ -80,6 +84,27 @@ public sealed class TokenRedeemCommandHandler(
                 "free",
                 token.Role);
             await users.AddAsync(accountForSession, cancellationToken);
+
+            if (string.Equals(token.Role, "family_member", StringComparison.Ordinal))
+            {
+                var auditEvent = new CaregiverRelationshipAuditEvent(
+                    Guid.NewGuid(), token.UserId, accountId, token.Id,
+                    CaregiverRelationshipAuditAction.AcceptedInitial, now);
+                try
+                {
+                    await audit.AppendAsync(auditEvent, cancellationToken);
+                    logger.LogInformation(
+                        "Caregiver relationship transitioned {Action} for patient {PatientId}, caregiver {CaregiverId}, source token {SourceTokenId}.",
+                        auditEvent.Action, auditEvent.PatientId, auditEvent.CaregiverId, auditEvent.SourceTokenId);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    logger.LogError(
+                        exception,
+                        "Caregiver relationship audit persistence failed after successful {Action} for patient {PatientId}, caregiver {CaregiverId}, source token {SourceTokenId}.",
+                        auditEvent.Action, auditEvent.PatientId, auditEvent.CaregiverId, auditEvent.SourceTokenId);
+                }
+            }
         }
 
         var jwt = jwtTokenService.Create(
