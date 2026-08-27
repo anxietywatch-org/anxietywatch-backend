@@ -4,8 +4,10 @@ using AnxietyWatch.Application.Abstractions.Time;
 using AnxietyWatch.Application.Common;
 using AnxietyWatch.Domain.Tokens;
 using AnxietyWatch.Domain.Users;
+using AnxietyWatch.Domain.Caregivers;
 using FluentValidation;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace AnxietyWatch.Application.Features.Tokens;
 
@@ -184,7 +186,12 @@ public sealed class DeleteTokenCommandHandler(ICurrentUser currentUser, ILinkTok
 
 public sealed record RevokeTokenCommand(Guid Id) : IRequest<bool>;
 
-public sealed class RevokeTokenCommandHandler(ICurrentUser currentUser, ILinkTokenRepository tokens)
+public sealed class RevokeTokenCommandHandler(
+    ICurrentUser currentUser,
+    ILinkTokenRepository tokens,
+    ISystemClock clock,
+    ICaregiverRelationshipAuditRepository audit,
+    ILogger<RevokeTokenCommandHandler> logger)
     : IRequestHandler<RevokeTokenCommand, bool>
 {
     public async Task<bool> Handle(RevokeTokenCommand command, CancellationToken cancellationToken)
@@ -205,6 +212,27 @@ public sealed class RevokeTokenCommandHandler(ICurrentUser currentUser, ILinkTok
         if (!await tokens.TryRevokeAsync(command.Id, cancellationToken))
         {
             throw new ConflictException("The token state changed before the request completed.");
+        }
+
+        if (string.Equals(token.Role, "family_member", StringComparison.Ordinal) && token.AcceptedBy.HasValue)
+        {
+            var auditEvent = new CaregiverRelationshipAuditEvent(
+                Guid.NewGuid(), token.UserId, token.AcceptedBy.Value, token.Id,
+                CaregiverRelationshipAuditAction.Revoked, clock.UtcNow);
+            try
+            {
+                await audit.AppendAsync(auditEvent, cancellationToken);
+                logger.LogInformation(
+                    "Caregiver relationship transitioned {Action} for patient {PatientId}, caregiver {CaregiverId}, source token {SourceTokenId}.",
+                    auditEvent.Action, auditEvent.PatientId, auditEvent.CaregiverId, auditEvent.SourceTokenId);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogError(
+                    exception,
+                    "Caregiver relationship audit persistence failed after successful {Action} for patient {PatientId}, caregiver {CaregiverId}, source token {SourceTokenId}.",
+                    auditEvent.Action, auditEvent.PatientId, auditEvent.CaregiverId, auditEvent.SourceTokenId);
+            }
         }
 
         return true;

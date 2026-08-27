@@ -3,8 +3,10 @@ using AnxietyWatch.Application.Abstractions.Time;
 using AnxietyWatch.Application.Common;
 using AnxietyWatch.Domain.Tokens;
 using AnxietyWatch.Domain.Users;
+using AnxietyWatch.Domain.Caregivers;
 using FluentValidation;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace AnxietyWatch.Application.Features.Caregivers;
 
@@ -27,7 +29,9 @@ public sealed class LinkAdditionalPatientCommandHandler(
     ICurrentUser currentUser,
     ILinkTokenRepository tokens,
     IUserRepository users,
-    ISystemClock clock)
+    ISystemClock clock,
+    ICaregiverRelationshipAuditRepository audit,
+    ILogger<LinkAdditionalPatientCommandHandler> logger)
     : IRequestHandler<LinkAdditionalPatientCommand, LinkAdditionalPatientResponse>
 {
     public async Task<LinkAdditionalPatientResponse> Handle(
@@ -83,6 +87,24 @@ public sealed class LinkAdditionalPatientCommandHandler(
         if (!await tokens.TryAcceptAsync(token.Id, token.Code, currentUser.UserId, now, cancellationToken))
         {
             throw new ConflictException("The code has already been used.");
+        }
+
+        var auditEvent = new CaregiverRelationshipAuditEvent(
+            Guid.NewGuid(), token.UserId, currentUser.UserId, token.Id,
+            CaregiverRelationshipAuditAction.AcceptedAdditional, now);
+        try
+        {
+            await audit.AppendAsync(auditEvent, cancellationToken);
+            logger.LogInformation(
+                "Caregiver relationship transitioned {Action} for patient {PatientId}, caregiver {CaregiverId}, source token {SourceTokenId}.",
+                auditEvent.Action, auditEvent.PatientId, auditEvent.CaregiverId, auditEvent.SourceTokenId);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(
+                exception,
+                "Caregiver relationship audit persistence failed after successful {Action} for patient {PatientId}, caregiver {CaregiverId}, source token {SourceTokenId}.",
+                auditEvent.Action, auditEvent.PatientId, auditEvent.CaregiverId, auditEvent.SourceTokenId);
         }
 
         return new LinkAdditionalPatientResponse(

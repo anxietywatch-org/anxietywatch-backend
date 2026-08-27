@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using AnxietyWatch.Application.Abstractions.Security;
 using AnxietyWatch.Domain.Tokens;
 using AnxietyWatch.Domain.Users;
+using AnxietyWatch.Domain.Caregivers;
 using AnxietyWatch.IntegrationTests.Infrastructure;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,6 +35,11 @@ public sealed class CaregiverAdditionalPatientLinkEndpointTests(CustomWebApplica
         patients!.Select(patient => patient.PatientId).Should().BeEquivalentTo([first.PatientId, second.PatientId]);
         (await caregiver.GetAsync($"/api/caregiver/patients/{first.PatientId}")).StatusCode.Should().Be(HttpStatusCode.OK);
         (await caregiver.GetAsync($"/api/caregiver/patients/{second.PatientId}")).StatusCode.Should().Be(HttpStatusCode.OK);
+        var audit = await WithAuditAsync(repository => repository.GetAsync(caregiverId: caregiverId));
+        audit.Should().HaveCount(2);
+        audit.Select(item => item.Action).Should().Equal(
+            CaregiverRelationshipAuditAction.AcceptedAdditional,
+            CaregiverRelationshipAuditAction.AcceptedAdditional);
     }
 
     [Fact]
@@ -170,6 +176,12 @@ public sealed class CaregiverAdditionalPatientLinkEndpointTests(CustomWebApplica
     {
         using var scope = factory.Services.CreateScope();
         return await action(scope.ServiceProvider.GetRequiredService<ILinkTokenRepository>());
+    }
+
+    private async Task<TResult> WithAuditAsync<TResult>(Func<ICaregiverRelationshipAuditRepository, Task<TResult>> action)
+    {
+        using var scope = factory.Services.CreateScope();
+        return await action(scope.ServiceProvider.GetRequiredService<ICaregiverRelationshipAuditRepository>());
     }
 
     private static string Code() => $"AW-{Guid.NewGuid():N}"[..15].ToUpperInvariant();

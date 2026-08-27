@@ -3,6 +3,7 @@ using AnxietyWatch.Application.Common;
 using AnxietyWatch.Application.Features.Caregivers;
 using AnxietyWatch.Domain.Tokens;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace AnxietyWatch.Application.UnitTests.Features.Caregivers;
@@ -17,7 +18,7 @@ public sealed class CaregiverAccessAuthorizerTests
     {
         currentUser.IsAuthenticated.Returns(true);
         currentUser.UserId.Returns(Guid.Parse("6cab73e8-d0f7-4b22-8ff1-1516351caaba"));
-        authorizer = new CaregiverAccessAuthorizer(currentUser, tokens);
+        authorizer = new CaregiverAccessAuthorizer(currentUser, tokens, NullLogger<CaregiverAccessAuthorizer>.Instance);
     }
 
     [Fact]

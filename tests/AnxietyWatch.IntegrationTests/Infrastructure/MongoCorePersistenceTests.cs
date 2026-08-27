@@ -1,6 +1,7 @@
 using AnxietyWatch.Application.Common;
 using AnxietyWatch.Domain.Tokens;
 using AnxietyWatch.Domain.Users;
+using AnxietyWatch.Domain.Caregivers;
 using AnxietyWatch.Infrastructure.Persistence.Mongo;
 using AnxietyWatch.Infrastructure.Security;
 using FluentAssertions;
@@ -16,6 +17,7 @@ public sealed class MongoCorePersistenceTests : IClassFixture<MongoDbContainerFi
     private readonly MongoUserRepository users;
     private readonly MongoLinkTokenRepository tokens;
     private readonly MongoRevokedTokenStore revokedTokens;
+    private readonly MongoCaregiverRelationshipAuditRepository relationshipAudit;
 
     public MongoCorePersistenceTests(MongoDbContainerFixture fixture)
     {
@@ -30,6 +32,7 @@ public sealed class MongoCorePersistenceTests : IClassFixture<MongoDbContainerFi
         users = new MongoUserRepository(context);
         tokens = new MongoLinkTokenRepository(context);
         revokedTokens = new MongoRevokedTokenStore(context);
+        relationshipAudit = new MongoCaregiverRelationshipAuditRepository(context);
     }
 
     public Task InitializeAsync() => Task.CompletedTask;
@@ -68,6 +71,38 @@ public sealed class MongoCorePersistenceTests : IClassFixture<MongoDbContainerFi
         stored!.Email.Should().BeOneOf("caregiver-a@example.test", "caregiver-b@example.test");
         stored.PasswordHash.Should().BeOneOf("hash-a", "hash-b");
         stored.SecurityVersion.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task CaregiverRelationshipAudit_IsAppendOnlySafeAndIndexedWithoutTtl()
+    {
+        var patientId = Guid.NewGuid();
+        var caregiverId = Guid.NewGuid();
+        var sourceTokenId = Guid.NewGuid();
+        var auditEvent = new CaregiverRelationshipAuditEvent(
+            Guid.NewGuid(), patientId, caregiverId, sourceTokenId,
+            CaregiverRelationshipAuditAction.AcceptedInitial, DateTimeOffset.UtcNow);
+
+        await relationshipAudit.AppendAsync(auditEvent);
+
+        var stored = await relationshipAudit.GetAsync(patientId, caregiverId);
+        var storedEvent = stored.Should().ContainSingle().Which;
+        storedEvent.Should().BeEquivalentTo(auditEvent, options => options
+            .Using<DateTimeOffset>(context => context.Subject.Should().BeCloseTo(
+                context.Expectation, TimeSpan.FromMilliseconds(1)))
+            .WhenTypeIs<DateTimeOffset>());
+        var document = await context.Database.GetCollection<BsonDocument>("caregiver_relationship_audit")
+            .Find(Builders<BsonDocument>.Filter.Empty)
+            .SingleAsync();
+        document.Names.Should().BeEquivalentTo(
+            ["_id", "patientId", "caregiverId", "sourceTokenId", "action", "occurredAt"]);
+
+        var indexes = await context.Database.GetCollection<BsonDocument>("caregiver_relationship_audit")
+            .Indexes.ListAsync();
+        var indexDocuments = await indexes.ToListAsync();
+        indexDocuments.Should().NotContain(index => index.Contains("expireAfterSeconds"));
+        indexDocuments.Any(index => index["key"].AsBsonDocument.Names
+            .SequenceEqual(new[] { "patientId", "caregiverId", "occurredAt" })).Should().BeTrue();
     }
 
     [Fact]
