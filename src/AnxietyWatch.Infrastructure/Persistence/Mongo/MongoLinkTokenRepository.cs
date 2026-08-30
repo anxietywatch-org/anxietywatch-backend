@@ -211,6 +211,20 @@ public sealed class MongoLinkTokenRepository(MongoContext context) : ILinkTokenR
         return result.MatchedCount == 1;
     }
 
+    public async Task<long> RevokeAcceptedCaregiverRelationshipsAsync(Guid patientId, Guid caregiverId, CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.And(
+            Builders<BsonDocument>.Filter.Eq("userId", patientId.ToString()),
+            Builders<BsonDocument>.Filter.Eq("acceptedBy", caregiverId.ToString()),
+            Builders<BsonDocument>.Filter.Eq("role", "family_member"),
+            Builders<BsonDocument>.Filter.Eq("status", Status(TokenStatus.Accepted)));
+        var update = Builders<BsonDocument>.Update
+            .Set("status", Status(TokenStatus.Deleted))
+            .Set("quotaActive", false);
+        var result = await Collection.UpdateManyAsync(filter, update, cancellationToken: cancellationToken);
+        return result.ModifiedCount;
+    }
+
     public async Task UpdateAsync(LinkToken token, CancellationToken cancellationToken = default)
     {
         var idFilter = Builders<BsonDocument>.Filter.Eq("_id", token.Id.ToString());

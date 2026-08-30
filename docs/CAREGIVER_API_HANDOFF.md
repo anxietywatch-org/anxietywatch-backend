@@ -243,6 +243,20 @@ and the caregiver account remain valid.
 Common errors: `401` unauthenticated, `403` not the token owner, `404` unknown
 token.
 
+## Caregiver Self-Unlink
+
+`DELETE /api/caregiver/patients/{patientId}` is the canonical caregiver
+self-unlink operation. The caregiver identity comes from the bearer JWT; no
+caregiver id is accepted in the request. A valid caregiver receives `204 No
+Content` whether the relationship existed or was already removed.
+
+The operation removes the explicit `caregiver_patient_links` pair and marks
+matching accepted legacy `family_member` link tokens as deleted. It does not
+delete the caregiver user, change the JWT subject, modify other patients or
+caregivers, or change `CaregiverInvitation` state. `POST
+/api/tokens/{tokenId}/revoke` remains the legacy token/relationship revocation
+operation; deleting an invitation is not relationship unlink.
+
 ## Integration Notes
 
 - The caregiver relationship authority is persisted `LinkToken.UserId` as the

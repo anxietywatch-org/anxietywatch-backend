@@ -208,6 +208,24 @@ public sealed class InMemoryLinkTokenRepository : ILinkTokenRepository
         }
     }
 
+    public Task<long> RevokeAcceptedCaregiverRelationshipsAsync(Guid patientId, Guid caregiverId, CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            var matching = tokens.Values.Where(token =>
+                token.UserId == patientId &&
+                token.AcceptedBy == caregiverId &&
+                token.Status == TokenStatus.Accepted &&
+                string.Equals(token.Role, "family_member", StringComparison.Ordinal)).ToArray();
+            foreach (var token in matching)
+            {
+                tokens[token.Id] = LinkToken.Restore(token.Id, token.UserId, token.Code, token.Role, token.ExpiresAt,
+                    TokenStatus.Deleted, token.AcceptedBy, token.AcceptedAt);
+            }
+            return Task.FromResult((long)matching.Length);
+        }
+    }
+
     public Task UpdateAsync(LinkToken token, CancellationToken cancellationToken = default)
     {
         lock (gate)
