@@ -3,6 +3,7 @@ using AnxietyWatch.Application.Abstractions.Time;
 using AnxietyWatch.Application.Common;
 using AnxietyWatch.Application.Features.Authentication;
 using AnxietyWatch.Domain.Tokens;
+using AnxietyWatch.Domain.FamilyPlans;
 using AnxietyWatch.Domain.Users;
 using FluentValidation;
 using MediatR;
@@ -30,7 +31,8 @@ public sealed class TokenRedeemCommandHandler(
     ILinkTokenRepository tokens,
     IUserRepository users,
     IJwtTokenService jwtTokenService,
-    ISystemClock clock)
+    ISystemClock clock,
+    IFamilyPlanPatientMembershipRepository memberships)
     : IRequestHandler<TokenRedeemCommand, TokenRedeemResponse>
 {
     public async Task<TokenRedeemResponse> Handle(
@@ -58,16 +60,19 @@ public sealed class TokenRedeemCommandHandler(
         }
 
         var isSelf = string.Equals(token.Role, "self", StringComparison.OrdinalIgnoreCase);
-        var accountId = isSelf ? token.UserId : Guid.NewGuid();
-        if (!await tokens.TryAcceptAsync(token.Id, token.Code, accountId, now, cancellationToken))
+        var isPatientInvitation = string.Equals(token.Role, "patient", StringComparison.OrdinalIgnoreCase);
+        User? owner = null;
+        if (isPatientInvitation)
         {
-            throw new ConflictException("The code has already been used.");
+            owner = await users.GetByIdAsync(token.UserId, cancellationToken);
         }
-
+        // A non-self token has one stable account identity so a transient failure
+        // during onboarding can be retried without creating a second user.
+        var accountId = isSelf ? token.UserId : token.Id;
         User accountForSession;
         if (isSelf)
         {
-            accountForSession = await users.GetByIdAsync(token.UserId, cancellationToken)
+            accountForSession = await users.GetByIdAsync(accountId, cancellationToken)
                 ?? throw new NotFoundException("The token owner no longer exists.");
         }
         else
@@ -79,7 +84,31 @@ public sealed class TokenRedeemCommandHandler(
                 Guid.NewGuid().ToString("N"),
                 "free",
                 token.Role);
-            await users.AddAsync(accountForSession, cancellationToken);
+            var existingAccount = await users.GetByIdAsync(accountForSession.Id, cancellationToken);
+            if (existingAccount is not null)
+            {
+                accountForSession = existingAccount;
+            }
+            else
+            {
+                await users.AddAsync(accountForSession, cancellationToken);
+            }
+        }
+
+        if (!await tokens.TryAcceptAsync(token.Id, token.Code, accountId, now, cancellationToken))
+        {
+            throw new ConflictException("The code has already been used.");
+        }
+
+        if (!isSelf && isPatientInvitation && owner is not null &&
+            string.Equals(owner.PlanId, "family", StringComparison.OrdinalIgnoreCase))
+        {
+            await memberships.EnsureMembershipAsync(
+                owner.Id,
+                accountForSession.Id,
+                token.Id,
+                now,
+                cancellationToken);
         }
 
         var jwt = jwtTokenService.Create(

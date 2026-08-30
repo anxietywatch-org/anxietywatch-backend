@@ -40,6 +40,8 @@ public sealed class MongoContext
             .Ascending("role")
             .Ascending("acceptedAt"));
         CreateIndex("link_tokens", Builders<BsonDocument>.IndexKeys.Ascending("code"), unique: true);
+        CreateIndex("family_plan_patient_memberships", Builders<BsonDocument>.IndexKeys.Ascending("ownerUserId").Ascending("patientUserId"), unique: true);
+        CreateIndex("family_plan_patient_memberships", Builders<BsonDocument>.IndexKeys.Ascending("ownerUserId").Descending("createdAt"));
         var tokenQuotaIndex = new CreateIndexModel<BsonDocument>(
             Builders<BsonDocument>.IndexKeys.Ascending("userId").Ascending("quotaSlot"),
             new CreateIndexOptions<BsonDocument>

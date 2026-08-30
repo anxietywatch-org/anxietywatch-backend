@@ -91,6 +91,10 @@ public static class DependencyInjection
             services.AddSingleton<IUserRepository, MongoUserRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, MongoEpisodeRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, MongoLinkTokenRepository>();
+            services.AddSingleton<AnxietyWatch.Domain.FamilyPlans.IFamilyPlanPatientMembershipRepository, MongoFamilyPlanPatientMembershipRepository>();
+            services.AddSingleton<AnxietyWatch.Application.Features.FamilyPlans.IFamilyPlanPatientAuthorizer, AnxietyWatch.Application.Features.FamilyPlans.FamilyPlanPatientAuthorizer>();
+            services.AddSingleton<AnxietyWatch.Application.Features.FamilyPlans.FamilyPlanPatientMembershipReconciler>();
+            services.AddHostedService<FamilyPlans.FamilyPlanPatientMembershipReconciliationService>();
             services.AddSingleton<AnxietyWatch.Domain.Devices.IDeviceTokenRepository, MongoDeviceTokenRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Notifications.INotificationOutboxRepository, MongoNotificationOutboxRepository>();
             services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IRevokedTokenStore, MongoRevokedTokenStore>();
@@ -109,6 +113,10 @@ public static class DependencyInjection
             services.AddSingleton<IUserRepository, InMemoryUserRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, InMemoryEpisodeRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, InMemoryLinkTokenRepository>();
+            services.AddSingleton<AnxietyWatch.Domain.FamilyPlans.IFamilyPlanPatientMembershipRepository, InMemoryFamilyPlanPatientMembershipRepository>();
+            services.AddSingleton<AnxietyWatch.Application.Features.FamilyPlans.IFamilyPlanPatientAuthorizer, AnxietyWatch.Application.Features.FamilyPlans.FamilyPlanPatientAuthorizer>();
+            services.AddSingleton<AnxietyWatch.Application.Features.FamilyPlans.FamilyPlanPatientMembershipReconciler>();
+            services.AddHostedService<FamilyPlans.FamilyPlanPatientMembershipReconciliationService>();
             services.AddSingleton<AnxietyWatch.Domain.Devices.IDeviceTokenRepository, InMemoryDeviceTokenRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Notifications.INotificationOutboxRepository, InMemoryNotificationOutboxRepository>();
             services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IRevokedTokenStore, InMemoryRevokedTokenStore>();

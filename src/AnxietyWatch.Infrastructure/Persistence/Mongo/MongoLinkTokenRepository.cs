@@ -77,6 +77,12 @@ public sealed class MongoLinkTokenRepository(MongoContext context) : ILinkTokenR
         return document is null ? null : Map(document);
     }
 
+    public async Task<IReadOnlyList<LinkToken>> GetAcceptedPatientTokensAsync(CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.And(Builders<BsonDocument>.Filter.Eq("status", Status(TokenStatus.Accepted)), Builders<BsonDocument>.Filter.Eq("role", "patient"), Builders<BsonDocument>.Filter.Exists("acceptedBy"), Builders<BsonDocument>.Filter.Ne("acceptedBy", BsonNull.Value));
+        return (await Collection.Find(filter).ToListAsync(cancellationToken)).Select(Map).ToArray();
+    }
+
     public async Task<bool> HasAcceptedCaregiverRelationshipAsync(
         Guid patientId,
         Guid caregiverId,
