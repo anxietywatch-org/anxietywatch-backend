@@ -57,6 +57,14 @@ public sealed class InMemoryLinkTokenRepository : ILinkTokenRepository
         }
     }
 
+    public Task<IReadOnlyList<LinkToken>> GetAcceptedPatientTokensAsync(CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            return Task.FromResult<IReadOnlyList<LinkToken>>(tokens.Values.Where(x => x.Status == TokenStatus.Accepted && string.Equals(x.Role, "patient", StringComparison.OrdinalIgnoreCase)).Select(Clone).ToArray());
+        }
+    }
+
     public Task<bool> HasAcceptedCaregiverRelationshipAsync(
         Guid patientId,
         Guid caregiverId,
