@@ -1,10 +1,13 @@
 using AnxietyWatch.Application.Abstractions.Notifications;
 using AnxietyWatch.Application.Abstractions.Security;
 using AnxietyWatch.Application.Abstractions.Time;
+using AnxietyWatch.Application.Features.Caregivers;
+using AnxietyWatch.Domain.Caregivers;
 using AnxietyWatch.Domain.Devices;
 using AnxietyWatch.Domain.Notifications;
 using AnxietyWatch.Domain.Tokens;
 using AnxietyWatch.Infrastructure.Notifications;
+using AnxietyWatch.Infrastructure.Persistence;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -32,9 +35,9 @@ public sealed class NotificationDeliveryWorkerTests
     [Fact]
     public async Task RevokedRelationship_SkipsWithoutSending()
     {
-        var (worker, outbox, sender, links, _) = CreateWorker();
+        var (worker, outbox, sender, relationships, _) = CreateWorker();
         var job = AddJob(outbox);
-        links.HasAcceptedCaregiverRelationshipAsync(job.PatientId, job.CaregiverId, Arg.Any<CancellationToken>()).Returns(false);
+        relationships.IsLinkedAsync(job.CaregiverId, job.PatientId, Arg.Any<CancellationToken>()).Returns(false);
 
         await worker.ProcessBatchAsync(1);
 
@@ -126,18 +129,46 @@ public sealed class NotificationDeliveryWorkerTests
         await sender.Received(1).SendAsync("registration-token", Arg.Any<NotificationPayload>(), Arg.Any<CancellationToken>());
     }
 
-    private static (NotificationDeliveryWorker Worker, FakeOutbox Outbox, IPushNotificationSender Sender, ILinkTokenRepository Links, IDeviceTokenRepository Devices) CreateWorker()
+    [Fact]
+    public async Task ExplicitLinkRemovedBeforeDelivery_SkipsPendingJob()
     {
         var outbox = new FakeOutbox();
-        var links = Substitute.For<ILinkTokenRepository>();
+        var patientId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var caregiverId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var explicitLinks = new InMemoryCaregiverPatientLinkRepository();
+        await explicitLinks.EnsureLinkAsync(caregiverId, patientId, null, Now);
+        var tokens = new InMemoryLinkTokenRepository();
+        var relationships = new CaregiverRelationshipResolver(tokens, explicitLinks);
+        var devices = Substitute.For<IDeviceTokenRepository>();
+        var sender = Substitute.For<IPushNotificationSender>();
+        var clock = Substitute.For<ISystemClock>();
+        clock.UtcNow.Returns(Now);
+        var device = new DeviceToken(Guid.NewGuid(), caregiverId, "android", "registration-token", Now);
+        devices.GetByIdAsync(device.Id, Arg.Any<CancellationToken>()).Returns(device);
+        var worker = new NotificationDeliveryWorker(outbox, relationships, devices, sender, clock, NullLogger<NotificationDeliveryWorker>.Instance);
+        var job = AddJob(outbox) with { PatientId = patientId, CaregiverId = caregiverId, DeviceRegistrationId = device.Id };
+        outbox.Replace(job);
+
+        await explicitLinks.RemoveLinkAsync(caregiverId, patientId);
+        await worker.ProcessBatchAsync(1);
+
+        outbox.Get(job.Id).Status.Should().Be(NotificationDeliveryStatus.Skipped);
+        outbox.Get(job.Id).LastErrorCode.Should().Be("RelationshipRevoked");
+        await sender.DidNotReceiveWithAnyArgs().SendAsync(default!, default!, default);
+    }
+
+    private static (NotificationDeliveryWorker Worker, FakeOutbox Outbox, IPushNotificationSender Sender, ICaregiverRelationshipResolver Relationships, IDeviceTokenRepository Devices) CreateWorker()
+    {
+        var outbox = new FakeOutbox();
+        var relationships = Substitute.For<ICaregiverRelationshipResolver>();
         var devices = Substitute.For<IDeviceTokenRepository>();
         var sender = Substitute.For<IPushNotificationSender>();
         var clock = Substitute.For<ISystemClock>();
         clock.UtcNow.Returns(Now);
         var device = new DeviceToken(Guid.NewGuid(), Guid.Parse("22222222-2222-2222-2222-222222222222"), "android", "registration-token", Now);
         devices.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(device);
-        links.HasAcceptedCaregiverRelationshipAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
-        return (new NotificationDeliveryWorker(outbox, links, devices, sender, clock, NullLogger<NotificationDeliveryWorker>.Instance), outbox, sender, links, devices);
+        relationships.IsLinkedAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
+        return (new NotificationDeliveryWorker(outbox, relationships, devices, sender, clock, NullLogger<NotificationDeliveryWorker>.Instance), outbox, sender, relationships, devices);
     }
 
     private static NotificationOutboxJob AddJob(FakeOutbox outbox)

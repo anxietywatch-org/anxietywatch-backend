@@ -45,6 +45,7 @@ public sealed class MongoContext
         CreateIndex("caregiver_invitations", Builders<BsonDocument>.IndexKeys.Ascending("code"), unique: true);
         CreateIndex("caregiver_patient_links", Builders<BsonDocument>.IndexKeys.Ascending("caregiverId").Ascending("patientId"), unique: true);
         CreateIndex("caregiver_patient_links", Builders<BsonDocument>.IndexKeys.Ascending("caregiverId").Descending("createdAt"));
+        CreateIndex("caregiver_patient_links", Builders<BsonDocument>.IndexKeys.Ascending("patientId").Descending("createdAt"));
         var tokenQuotaIndex = new CreateIndexModel<BsonDocument>(
             Builders<BsonDocument>.IndexKeys.Ascending("userId").Ascending("quotaSlot"),
             new CreateIndexOptions<BsonDocument>
