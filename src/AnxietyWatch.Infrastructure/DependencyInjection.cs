@@ -92,6 +92,8 @@ public static class DependencyInjection
             services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, MongoEpisodeRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, MongoLinkTokenRepository>();
             services.AddSingleton<AnxietyWatch.Domain.FamilyPlans.IFamilyPlanPatientMembershipRepository, MongoFamilyPlanPatientMembershipRepository>();
+            services.AddSingleton<AnxietyWatch.Domain.Caregivers.ICaregiverInvitationRepository, MongoCaregiverInvitationRepository>();
+            services.AddSingleton<AnxietyWatch.Domain.Caregivers.ICaregiverPatientLinkRepository, MongoCaregiverPatientLinkRepository>();
             services.AddSingleton<AnxietyWatch.Application.Features.FamilyPlans.IFamilyPlanPatientAuthorizer, AnxietyWatch.Application.Features.FamilyPlans.FamilyPlanPatientAuthorizer>();
             services.AddSingleton<AnxietyWatch.Application.Features.FamilyPlans.FamilyPlanPatientMembershipReconciler>();
             services.AddHostedService<FamilyPlans.FamilyPlanPatientMembershipReconciliationService>();
@@ -114,6 +116,8 @@ public static class DependencyInjection
             services.AddSingleton<AnxietyWatch.Domain.Episodes.IEpisodeRepository, InMemoryEpisodeRepository>();
             services.AddSingleton<AnxietyWatch.Domain.Tokens.ILinkTokenRepository, InMemoryLinkTokenRepository>();
             services.AddSingleton<AnxietyWatch.Domain.FamilyPlans.IFamilyPlanPatientMembershipRepository, InMemoryFamilyPlanPatientMembershipRepository>();
+            services.AddSingleton<AnxietyWatch.Domain.Caregivers.ICaregiverInvitationRepository, InMemoryCaregiverInvitationRepository>();
+            services.AddSingleton<AnxietyWatch.Domain.Caregivers.ICaregiverPatientLinkRepository, InMemoryCaregiverPatientLinkRepository>();
             services.AddSingleton<AnxietyWatch.Application.Features.FamilyPlans.IFamilyPlanPatientAuthorizer, AnxietyWatch.Application.Features.FamilyPlans.FamilyPlanPatientAuthorizer>();
             services.AddSingleton<AnxietyWatch.Application.Features.FamilyPlans.FamilyPlanPatientMembershipReconciler>();
             services.AddHostedService<FamilyPlans.FamilyPlanPatientMembershipReconciliationService>();

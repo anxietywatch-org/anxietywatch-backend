@@ -21,6 +21,15 @@ public sealed class CaregiverController(ISender sender) : ControllerBase
         CancellationToken cancellationToken) =>
         Ok(await sender.Send(command, cancellationToken));
 
+    [HttpPost("patients/{patientId:guid}/invitations")]
+    public async Task<ActionResult<CreateCaregiverInvitationResponse>> CreateInvitation(Guid patientId, CancellationToken cancellationToken) => StatusCode(StatusCodes.Status201Created, await sender.Send(new CreateCaregiverInvitationCommand(patientId), cancellationToken));
+
+    [HttpPost("invitations/accept")]
+    public async Task<ActionResult<AcceptCaregiverInvitationResponse>> AcceptInvitation(AcceptCaregiverInvitationRequest request, CancellationToken cancellationToken) => Ok(await sender.Send(new AcceptCaregiverInvitationCommand(request.Code), cancellationToken));
+
+    [HttpDelete("invitations/{id:guid}")]
+    public async Task<IActionResult> DeleteInvitation(Guid id, CancellationToken cancellationToken) => await sender.Send(new RevokeCaregiverInvitationCommand(id), cancellationToken) ? NoContent() : NotFound();
+
     [HttpGet("patients/{patientId:guid}")]
     public async Task<ActionResult<PatientDetailResponse>> Patient(
         Guid patientId,

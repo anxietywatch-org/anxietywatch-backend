@@ -2,6 +2,7 @@ using AnxietyWatch.Application.Abstractions.Security;
 using AnxietyWatch.Application.Common;
 using AnxietyWatch.Domain.Tokens;
 using AnxietyWatch.Domain.Users;
+using AnxietyWatch.Domain.Caregivers;
 using MediatR;
 
 namespace AnxietyWatch.Application.Features.Caregivers;
@@ -18,7 +19,8 @@ public sealed record GetLinkedPatientsQuery : IRequest<IReadOnlyList<LinkedPatie
 public sealed class GetLinkedPatientsQueryHandler(
     ICurrentUser currentUser,
     ILinkTokenRepository tokens,
-    IUserRepository users)
+    IUserRepository users,
+    ICaregiverPatientLinkRepository links)
     : IRequestHandler<GetLinkedPatientsQuery, IReadOnlyList<LinkedPatientResponse>>
 {
     public async Task<IReadOnlyList<LinkedPatientResponse>> Handle(
@@ -31,7 +33,14 @@ public sealed class GetLinkedPatientsQueryHandler(
         }
 
         var relationships = await tokens.GetAcceptedCaregiverRelationshipsAsync(currentUser.UserId, cancellationToken);
-        var result = new List<LinkedPatientResponse>(relationships.Count);
+        var explicitLinks = await links.ListByCaregiverAsync(currentUser.UserId, cancellationToken);
+        var result = new List<LinkedPatientResponse>(relationships.Count + explicitLinks.Count);
+        var seen = new HashSet<Guid>();
+        foreach (var link in explicitLinks)
+        {
+            var patient = await users.GetByIdAsync(link.PatientId, cancellationToken);
+            if (patient is not null && seen.Add(patient.Id)) result.Add(new LinkedPatientResponse(patient.Id.ToString(), patient.FullName, patient.AvatarUrl, "caregiver", link.CreatedAt));
+        }
         foreach (var relationship in relationships)
         {
             var patient = await users.GetByIdAsync(relationship.PatientId, cancellationToken);
@@ -40,6 +49,7 @@ public sealed class GetLinkedPatientsQueryHandler(
                 continue;
             }
 
+            if (!seen.Add(patient.Id)) continue;
             result.Add(new LinkedPatientResponse(
                 patient.Id.ToString(),
                 patient.FullName,
