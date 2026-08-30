@@ -32,7 +32,8 @@ public sealed class TokenRedeemCommandHandler(
     IUserRepository users,
     IJwtTokenService jwtTokenService,
     ISystemClock clock,
-    IFamilyPlanPatientMembershipRepository memberships)
+    IFamilyPlanPatientMembershipRepository memberships,
+    ICurrentUser currentUser)
     : IRequestHandler<TokenRedeemCommand, TokenRedeemResponse>
 {
     public async Task<TokenRedeemResponse> Handle(
@@ -61,19 +62,36 @@ public sealed class TokenRedeemCommandHandler(
 
         var isSelf = string.Equals(token.Role, "self", StringComparison.OrdinalIgnoreCase);
         var isPatientInvitation = string.Equals(token.Role, "patient", StringComparison.OrdinalIgnoreCase);
+        var isCaregiverInvitation = string.Equals(token.Role, "family_member", StringComparison.OrdinalIgnoreCase);
         User? owner = null;
         if (isPatientInvitation)
         {
             owner = await users.GetByIdAsync(token.UserId, cancellationToken);
         }
-        // A non-self token has one stable account identity so a transient failure
-        // during onboarding can be retried without creating a second user.
-        var accountId = isSelf ? token.UserId : token.Id;
+        var authenticatedCaregiver = isCaregiverInvitation && currentUser.IsAuthenticated && currentUser.UserId != Guid.Empty
+            ? await users.GetByIdAsync(currentUser.UserId, cancellationToken)
+            : null;
+        if (isCaregiverInvitation && currentUser.IsAuthenticated &&
+            (authenticatedCaregiver is null || !string.Equals(authenticatedCaregiver.Role, "family_member", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new ConflictException("A caregiver session is required to accept a caregiver invitation.");
+        }
+
+        // An anonymous non-self token starts one stable provisional caregiver account.
+        // An already authenticated caregiver keeps that account identity instead of
+        // switching to a second account derived from the invitation token.
+        var accountId = isCaregiverInvitation && authenticatedCaregiver is not null
+            ? authenticatedCaregiver.Id
+            : isSelf ? token.UserId : token.Id;
         User accountForSession;
         if (isSelf)
         {
             accountForSession = await users.GetByIdAsync(accountId, cancellationToken)
                 ?? throw new NotFoundException("The token owner no longer exists.");
+        }
+        else if (authenticatedCaregiver is not null)
+        {
+            accountForSession = authenticatedCaregiver;
         }
         else
         {
