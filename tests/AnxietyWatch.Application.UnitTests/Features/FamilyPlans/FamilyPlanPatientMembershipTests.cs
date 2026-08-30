@@ -182,6 +182,7 @@ public sealed class FamilyPlanPatientMembershipTests
         var tokens = new InMemoryLinkTokenRepository();
         var users = new InMemoryUserRepository();
         var memberships = new InMemoryFamilyPlanPatientMembershipRepository();
+        var currentUser = Substitute.For<ICurrentUser>();
         var clock = Substitute.For<ISystemClock>();
         var now = DateTimeOffset.UtcNow;
         clock.UtcNow.Returns(now);
@@ -192,7 +193,7 @@ public sealed class FamilyPlanPatientMembershipTests
         jwt.Create(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<long>())
             .Returns(new JwtToken("redacted-test-token", now.AddHours(1), Guid.NewGuid().ToString()));
 
-        var response = await new TokenRedeemCommandHandler(tokens, users, jwt, clock, memberships)
+        var response = await new TokenRedeemCommandHandler(tokens, users, jwt, clock, memberships, currentUser)
             .Handle(new TokenRedeemCommand(token.Code, "device"), CancellationToken.None);
 
         response.Role.Should().Be("patient");
@@ -212,6 +213,7 @@ public sealed class FamilyPlanPatientMembershipTests
         var tokens = new InMemoryLinkTokenRepository();
         var users = new InMemoryUserRepository();
         var memberships = new InMemoryFamilyPlanPatientMembershipRepository();
+        var currentUser = Substitute.For<ICurrentUser>();
         var clock = Substitute.For<ISystemClock>();
         var now = DateTimeOffset.UtcNow;
         clock.UtcNow.Returns(now);
@@ -222,7 +224,7 @@ public sealed class FamilyPlanPatientMembershipTests
         jwt.Create(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<long>())
             .Returns(new JwtToken("redacted-test-token", now.AddHours(1), Guid.NewGuid().ToString()));
 
-        await new TokenRedeemCommandHandler(tokens, users, jwt, clock, memberships)
+        await new TokenRedeemCommandHandler(tokens, users, jwt, clock, memberships, currentUser)
             .Handle(new TokenRedeemCommand(token.Code, "device"), CancellationToken.None);
 
         (await memberships.ListPatientsAsync(ownerId)).Should().BeEmpty();
