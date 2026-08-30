@@ -2,6 +2,7 @@ using AnxietyWatch.Application.Abstractions.Security;
 using AnxietyWatch.Application.Common;
 using AnxietyWatch.Application.Features.Caregivers;
 using AnxietyWatch.Domain.Tokens;
+using AnxietyWatch.Domain.Caregivers;
 using FluentAssertions;
 using NSubstitute;
 
@@ -11,13 +12,14 @@ public sealed class CaregiverAccessAuthorizerTests
 {
     private readonly ICurrentUser currentUser = Substitute.For<ICurrentUser>();
     private readonly ILinkTokenRepository tokens = Substitute.For<ILinkTokenRepository>();
+    private readonly ICaregiverPatientLinkRepository links = Substitute.For<ICaregiverPatientLinkRepository>();
     private readonly CaregiverAccessAuthorizer authorizer;
 
     public CaregiverAccessAuthorizerTests()
     {
         currentUser.IsAuthenticated.Returns(true);
         currentUser.UserId.Returns(Guid.Parse("6cab73e8-d0f7-4b22-8ff1-1516351caaba"));
-        authorizer = new CaregiverAccessAuthorizer(currentUser, tokens);
+        authorizer = new CaregiverAccessAuthorizer(currentUser, tokens, links);
     }
 
     [Fact]
