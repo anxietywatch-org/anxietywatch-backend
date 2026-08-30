@@ -6,4 +6,5 @@ public interface ICaregiverPatientLinkRepository
     Task<bool> IsLinkedAsync(Guid caregiverId, Guid patientId, CancellationToken cancellationToken = default);
     Task<bool> RemoveLinkAsync(Guid caregiverId, Guid patientId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CaregiverPatientLink>> ListByCaregiverAsync(Guid caregiverId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CaregiverPatientLink>> ListByPatientAsync(Guid patientId, CancellationToken cancellationToken = default);
 }

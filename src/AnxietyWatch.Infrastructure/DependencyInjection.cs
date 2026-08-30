@@ -55,6 +55,7 @@ public static class DependencyInjection
             services.AddSingleton<AnxietyWatch.Application.Abstractions.Security.IEmailSender, LoggingEmailSender>();
         }
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Time.ISystemClock, SystemClock>();
+        services.AddSingleton<AnxietyWatch.Application.Features.Caregivers.ICaregiverRelationshipResolver, AnxietyWatch.Application.Features.Caregivers.CaregiverRelationshipResolver>();
         services.AddSingleton<AnxietyWatch.Application.Abstractions.Notifications.ICaregiverNotificationOutbox, CaregiverNotificationOutbox>();
         if (configuration.GetValue<bool>("Firebase:Enabled"))
         {

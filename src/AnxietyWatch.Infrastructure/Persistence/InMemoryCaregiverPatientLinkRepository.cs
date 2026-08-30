@@ -10,4 +10,5 @@ public sealed class InMemoryCaregiverPatientLinkRepository : ICaregiverPatientLi
     public Task<bool> IsLinkedAsync(Guid caregiverId, Guid patientId, CancellationToken cancellationToken = default) => Task.FromResult(links.ContainsKey((caregiverId, patientId)));
     public Task<bool> RemoveLinkAsync(Guid caregiverId, Guid patientId, CancellationToken cancellationToken = default) => Task.FromResult(links.TryRemove((caregiverId, patientId), out _));
     public Task<IReadOnlyList<CaregiverPatientLink>> ListByCaregiverAsync(Guid caregiverId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<CaregiverPatientLink>>(links.Values.Where(x => x.CaregiverId == caregiverId).OrderByDescending(x => x.CreatedAt).ToArray());
+    public Task<IReadOnlyList<CaregiverPatientLink>> ListByPatientAsync(Guid patientId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<CaregiverPatientLink>>(links.Values.Where(x => x.PatientId == patientId).OrderByDescending(x => x.CreatedAt).ToArray());
 }

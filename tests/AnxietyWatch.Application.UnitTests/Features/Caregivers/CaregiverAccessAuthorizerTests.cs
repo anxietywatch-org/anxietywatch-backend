@@ -1,8 +1,6 @@
 using AnxietyWatch.Application.Abstractions.Security;
 using AnxietyWatch.Application.Common;
 using AnxietyWatch.Application.Features.Caregivers;
-using AnxietyWatch.Domain.Tokens;
-using AnxietyWatch.Domain.Caregivers;
 using FluentAssertions;
 using NSubstitute;
 
@@ -11,29 +9,27 @@ namespace AnxietyWatch.Application.UnitTests.Features.Caregivers;
 public sealed class CaregiverAccessAuthorizerTests
 {
     private readonly ICurrentUser currentUser = Substitute.For<ICurrentUser>();
-    private readonly ILinkTokenRepository tokens = Substitute.For<ILinkTokenRepository>();
-    private readonly ICaregiverPatientLinkRepository links = Substitute.For<ICaregiverPatientLinkRepository>();
+    private readonly ICaregiverRelationshipResolver relationships = Substitute.For<ICaregiverRelationshipResolver>();
     private readonly CaregiverAccessAuthorizer authorizer;
 
     public CaregiverAccessAuthorizerTests()
     {
         currentUser.IsAuthenticated.Returns(true);
         currentUser.UserId.Returns(Guid.Parse("6cab73e8-d0f7-4b22-8ff1-1516351caaba"));
-        authorizer = new CaregiverAccessAuthorizer(currentUser, tokens, links);
+        authorizer = new CaregiverAccessAuthorizer(currentUser, relationships);
     }
 
     [Fact]
     public async Task RequireCaregiverAccessAsync_WhenAcceptedRelationshipExists_ShouldPass()
     {
         var patientId = Guid.NewGuid();
-        tokens.HasAcceptedCaregiverRelationshipAsync(patientId, currentUser.UserId, Arg.Any<CancellationToken>())
-            .Returns(true);
+        relationships.IsLinkedAsync(currentUser.UserId, patientId, Arg.Any<CancellationToken>()).Returns(true);
 
         await authorizer.RequireCaregiverAccessAsync(patientId);
 
-        await tokens.Received(1).HasAcceptedCaregiverRelationshipAsync(
-            patientId,
+        await relationships.Received(1).IsLinkedAsync(
             currentUser.UserId,
+            patientId,
             Arg.Any<CancellationToken>());
     }
 
@@ -52,8 +48,7 @@ public sealed class CaregiverAccessAuthorizerTests
     public async Task RequireCaregiverAccessAsync_WhenNoAcceptedRelationshipExists_ShouldThrowForbidden()
     {
         var patientId = Guid.NewGuid();
-        tokens.HasAcceptedCaregiverRelationshipAsync(patientId, currentUser.UserId, Arg.Any<CancellationToken>())
-            .Returns(false);
+        relationships.IsLinkedAsync(currentUser.UserId, patientId, Arg.Any<CancellationToken>()).Returns(false);
 
         var act = async () => await authorizer.RequireCaregiverAccessAsync(patientId);
 

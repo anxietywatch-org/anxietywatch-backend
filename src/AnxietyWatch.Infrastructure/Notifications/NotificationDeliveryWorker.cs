@@ -1,8 +1,8 @@
 using AnxietyWatch.Application.Abstractions.Notifications;
 using AnxietyWatch.Application.Abstractions.Time;
+using AnxietyWatch.Application.Features.Caregivers;
 using AnxietyWatch.Domain.Devices;
 using AnxietyWatch.Domain.Notifications;
-using AnxietyWatch.Domain.Tokens;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -10,7 +10,7 @@ namespace AnxietyWatch.Infrastructure.Notifications;
 
 public sealed class NotificationDeliveryWorker(
     INotificationOutboxRepository outbox,
-    ILinkTokenRepository links,
+    ICaregiverRelationshipResolver relationships,
     IDeviceTokenRepository devices,
     IPushNotificationSender sender,
     ISystemClock clock,
@@ -52,7 +52,7 @@ public sealed class NotificationDeliveryWorker(
 
     private async Task ProcessAsync(NotificationOutboxJob job, DateTimeOffset now, CancellationToken ct)
     {
-        if (!await links.HasAcceptedCaregiverRelationshipAsync(job.PatientId, job.CaregiverId, ct))
+        if (!await relationships.IsLinkedAsync(job.CaregiverId, job.PatientId, ct))
         {
             logger.LogInformation("Notification job {JobId} skipped {Reason} attempt {Attempt}", job.Id, "RelationshipRevoked", job.AttemptCount);
             await outbox.MarkSkippedAsync(job.Id, "RelationshipRevoked", now, ct); return;

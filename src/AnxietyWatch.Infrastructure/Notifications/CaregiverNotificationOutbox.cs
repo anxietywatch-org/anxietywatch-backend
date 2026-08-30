@@ -1,15 +1,15 @@
 using AnxietyWatch.Application.Abstractions.Notifications;
 using AnxietyWatch.Application.Abstractions.Time;
+using AnxietyWatch.Application.Features.Caregivers;
 using AnxietyWatch.Domain.Devices;
 using AnxietyWatch.Domain.Notifications;
-using AnxietyWatch.Domain.Tokens;
 using AnxietyWatch.Domain.Users;
 using Microsoft.Extensions.Logging;
 
 namespace AnxietyWatch.Infrastructure.Notifications;
 
 public sealed class CaregiverNotificationOutbox(
-    ILinkTokenRepository links,
+    ICaregiverRelationshipResolver relationships,
     IDeviceTokenRepository devices,
     IUserRepository users,
     INotificationOutboxRepository outbox,
@@ -30,14 +30,7 @@ public sealed class CaregiverNotificationOutbox(
         var payload = new NotificationPayload(
             eventId.ToString(), patientName, message, EmergencyPhone: patient?.EmergencyContactPhone);
 
-        var relationships = await links.GetAsync(patientId, cancellationToken);
-        var caregiverIds = relationships
-            .Where(link => link.Status == TokenStatus.Accepted &&
-                           link.AcceptedBy.HasValue &&
-                           string.Equals(link.Role, "family_member", StringComparison.Ordinal))
-            .Select(link => link.AcceptedBy!.Value)
-            .Distinct()
-            .ToArray();
+        var caregiverIds = await relationships.ListCaregiverIdsAsync(patientId, cancellationToken);
         var now = clock.UtcNow;
         var jobs = new List<NotificationOutboxJob>();
         foreach (var caregiverId in caregiverIds)

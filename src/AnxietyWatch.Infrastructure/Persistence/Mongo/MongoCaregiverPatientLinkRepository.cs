@@ -23,5 +23,6 @@ public sealed class MongoCaregiverPatientLinkRepository(MongoContext context) : 
         return (await Collection.DeleteOneAsync(filter, cancellationToken)).DeletedCount == 1;
     }
     public async Task<IReadOnlyList<CaregiverPatientLink>> ListByCaregiverAsync(Guid caregiverId, CancellationToken cancellationToken = default) => (await Collection.Find(Builders<BsonDocument>.Filter.Eq("caregiverId", caregiverId.ToString())).SortByDescending(x => x["createdAt"]).ToListAsync(cancellationToken)).Select(Map).ToArray();
+    public async Task<IReadOnlyList<CaregiverPatientLink>> ListByPatientAsync(Guid patientId, CancellationToken cancellationToken = default) => (await Collection.Find(Builders<BsonDocument>.Filter.Eq("patientId", patientId.ToString())).SortByDescending(x => x["createdAt"]).ToListAsync(cancellationToken)).Select(Map).ToArray();
     private static CaregiverPatientLink Map(BsonDocument d) => new(Guid.Parse(d["_id"].AsString), Guid.Parse(d["caregiverId"].AsString), Guid.Parse(d["patientId"].AsString), new DateTimeOffset(d["createdAt"].ToUniversalTime()), d.TryGetValue("sourceInvitationId", out var s) && !s.IsBsonNull ? Guid.Parse(s.AsString) : null);
 }
