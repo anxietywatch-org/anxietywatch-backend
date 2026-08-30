@@ -96,8 +96,10 @@ public sealed class MongoFamilyPlanPatientMembershipTests : IClassFixture<MongoD
         var now = DateTimeOffset.UtcNow;
         await users.AddAsync(new User(ownerId, "Owner", "mongo-owner@example.test", "hash", "family"));
         await users.AddAsync(new User(patientId, "Patient", "mongo-patient@example.test", "hash", "free"));
-        var token = LinkToken.Restore(Guid.NewGuid(), ownerId, "AW-MONGO", "patient", now.AddHours(1), TokenStatus.Accepted, patientId, now);
+        var token = new LinkToken(Guid.NewGuid(), ownerId, "AW-MONGO", "patient", now.AddHours(1));
         await tokens.TryAddAsync(token, 10);
+        (await tokens.TryAcceptAsync(token.Id, token.Code, patientId, now)).Should().BeTrue();
+        (await tokens.GetAcceptedPatientTokensAsync()).Should().ContainSingle().Which.AcceptedBy.Should().Be(patientId);
         var reconciler = new FamilyPlanPatientMembershipReconciler(tokens, users, memberships, new FixedClock(now), LoggerFactory.Create(_ => { }).CreateLogger<FamilyPlanPatientMembershipReconciler>());
 
         (await reconciler.ReconcileAcceptedPatientTokensAsync()).Should().Be(1);

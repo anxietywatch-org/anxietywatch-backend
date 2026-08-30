@@ -76,6 +76,8 @@ public sealed class FamilyPlanPatientMembershipEndpointTests(CustomWebApplicatio
             scope.ServiceProvider.GetRequiredService<ILogger<FamilyPlanPatientMembershipReconciliationService>>());
 
         await service.StartAsync(CancellationToken.None);
+        service.ExecuteTask.Should().NotBeNull();
+        await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5));
         await service.StopAsync(CancellationToken.None);
 
         (await memberships.CanManagePatientAsync(ownerId, patientId)).Should().BeTrue();
