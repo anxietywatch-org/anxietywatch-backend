@@ -15,6 +15,13 @@ public sealed class MongoCaregiverPatientLinkRepository(MongoContext context) : 
         catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey) { return Map(await Collection.Find(filter).FirstAsync(cancellationToken)); }
     }
     public async Task<bool> IsLinkedAsync(Guid caregiverId, Guid patientId, CancellationToken cancellationToken = default) => await Collection.CountDocumentsAsync(Builders<BsonDocument>.Filter.And(Builders<BsonDocument>.Filter.Eq("caregiverId", caregiverId.ToString()), Builders<BsonDocument>.Filter.Eq("patientId", patientId.ToString())), new CountOptions { Limit = 1 }, cancellationToken) == 1;
+    public async Task<bool> RemoveLinkAsync(Guid caregiverId, Guid patientId, CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.And(
+            Builders<BsonDocument>.Filter.Eq("caregiverId", caregiverId.ToString()),
+            Builders<BsonDocument>.Filter.Eq("patientId", patientId.ToString()));
+        return (await Collection.DeleteOneAsync(filter, cancellationToken)).DeletedCount == 1;
+    }
     public async Task<IReadOnlyList<CaregiverPatientLink>> ListByCaregiverAsync(Guid caregiverId, CancellationToken cancellationToken = default) => (await Collection.Find(Builders<BsonDocument>.Filter.Eq("caregiverId", caregiverId.ToString())).SortByDescending(x => x["createdAt"]).ToListAsync(cancellationToken)).Select(Map).ToArray();
     private static CaregiverPatientLink Map(BsonDocument d) => new(Guid.Parse(d["_id"].AsString), Guid.Parse(d["caregiverId"].AsString), Guid.Parse(d["patientId"].AsString), new DateTimeOffset(d["createdAt"].ToUniversalTime()), d.TryGetValue("sourceInvitationId", out var s) && !s.IsBsonNull ? Guid.Parse(s.AsString) : null);
 }

@@ -21,6 +21,13 @@ public sealed class CaregiverController(ISender sender) : ControllerBase
         CancellationToken cancellationToken) =>
         Ok(await sender.Send(command, cancellationToken));
 
+    [HttpDelete("patients/{patientId:guid}")]
+    public async Task<IActionResult> UnlinkPatient(Guid patientId, CancellationToken cancellationToken)
+    {
+        await sender.Send(new UnlinkCaregiverPatientCommand(patientId), cancellationToken);
+        return NoContent();
+    }
+
     [HttpPost("patients/{patientId:guid}/invitations")]
     public async Task<ActionResult<CreateCaregiverInvitationResponse>> CreateInvitation(Guid patientId, CancellationToken cancellationToken) => StatusCode(StatusCodes.Status201Created, await sender.Send(new CreateCaregiverInvitationCommand(patientId), cancellationToken));
 

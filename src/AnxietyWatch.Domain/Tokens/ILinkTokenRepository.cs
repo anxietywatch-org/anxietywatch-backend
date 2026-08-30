@@ -31,5 +31,6 @@ public interface ILinkTokenRepository
         CancellationToken cancellationToken = default);
     Task<bool> TryDeleteAsync(Guid id, string expectedCode, CancellationToken cancellationToken = default);
     Task<bool> TryRevokeAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<long> RevokeAcceptedCaregiverRelationshipsAsync(Guid patientId, Guid caregiverId, CancellationToken cancellationToken = default);
     Task UpdateAsync(LinkToken token, CancellationToken cancellationToken = default);
 }
