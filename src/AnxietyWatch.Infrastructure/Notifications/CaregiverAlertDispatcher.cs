@@ -11,10 +11,34 @@ public sealed class CaregiverAlertDispatcher(
     IPushNotifier notifier,
     ILogger<CaregiverAlertDispatcher> logger) : ICaregiverAlertDispatcher
 {
-    public async Task DispatchSosAlertAsync(
+    public Task DispatchSosAlertAsync(
         Guid patientUserId,
         Guid eventId,
         CancellationToken cancellationToken = default)
+        => DispatchAsync(
+            patientUserId,
+            "Alerta SOS",
+            $"Un paciente vinculado activó una alerta SOS (evento {eventId:N}).",
+            "SOS",
+            cancellationToken);
+
+    public Task DispatchSupportRequestedAlertAsync(
+        Guid patientUserId,
+        Guid eventId,
+        CancellationToken cancellationToken = default)
+        => DispatchAsync(
+            patientUserId,
+            "El paciente pidió apoyo",
+            $"Un paciente vinculado pidió apoyo durante un posible episodio (evento {eventId:N}).",
+            "support-requested",
+            cancellationToken);
+
+    private async Task DispatchAsync(
+        Guid patientUserId,
+        string title,
+        string body,
+        string kind,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -33,18 +57,15 @@ public sealed class CaregiverAlertDispatcher(
 
             if (deviceTokens.Count > 0)
             {
-                await notifier.NotifyAsync(
-                    deviceTokens,
-                    "Alerta SOS",
-                    $"Un paciente vinculado activó una alerta SOS (evento {eventId:N}).",
-                    cancellationToken);
+                await notifier.NotifyAsync(deviceTokens, title, body, cancellationToken);
             }
         }
         catch (Exception exception)
         {
             logger.LogWarning(
                 exception,
-                "Caregiver SOS alert dispatch failed for patient {PatientUserId}.",
+                "Caregiver {Kind} alert dispatch failed for patient {PatientUserId}.",
+                kind,
                 patientUserId);
         }
     }

@@ -12,4 +12,6 @@ public interface IPushNotifier
 public interface ICaregiverAlertDispatcher
 {
     Task DispatchSosAlertAsync(Guid patientUserId, Guid eventId, CancellationToken cancellationToken = default);
+
+    Task DispatchSupportRequestedAlertAsync(Guid patientUserId, Guid eventId, CancellationToken cancellationToken = default);
 }

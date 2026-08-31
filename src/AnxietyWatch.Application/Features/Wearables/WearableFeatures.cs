@@ -336,7 +336,8 @@ public sealed class SubmitEventDecisionCommandValidator : AbstractValidator<Subm
 
 public sealed class SubmitEventDecisionCommandHandler(
     ICurrentUser currentUser,
-    IWearableSyncRepository repository)
+    IWearableSyncRepository repository,
+    ICaregiverAlertDispatcher alertDispatcher)
     : IRequestHandler<SubmitEventDecisionCommand, SubmissionResponse>
 {
     public async Task<SubmissionResponse> Handle(SubmitEventDecisionCommand command, CancellationToken cancellationToken)
@@ -348,6 +349,15 @@ public sealed class SubmitEventDecisionCommandHandler(
             userId,
             command.Decision,
             cancellationToken);
+        if (accepted &&
+            string.Equals(command.Decision.Response, "SUPPORT_REQUESTED", StringComparison.OrdinalIgnoreCase))
+        {
+            await alertDispatcher.DispatchSupportRequestedAlertAsync(
+                userId,
+                command.Decision.EventId,
+                cancellationToken);
+        }
+
         return new SubmissionResponse(command.Decision.EventId, accepted, !accepted);
     }
 }
